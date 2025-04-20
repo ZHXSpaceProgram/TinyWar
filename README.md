@@ -1,14 +1,17 @@
-# Tiny War: 2D Pixel Turn-Based Strategy Game on Python
+# Tiny War: 2D Pixel Turn-Based Strategy Game
+
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/f27097a8-8efe-476d-bba1-b86754c28b14" width="400" />
+</div>
 
 ## How to Play?
 
 If you are on Windows:
-- Download the latest [release](https://github.com/ZHXSpaceProgram/TinyWar/releases)
+- Download `Game.zip` from the latest [release](https://github.com/ZHXSpaceProgram/TinyWar/releases)
 - Unzip
 - Run the excutable file
 
 To run source code:
-
 
 ```
 pip install pygame

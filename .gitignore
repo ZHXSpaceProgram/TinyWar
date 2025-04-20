@@ -5,3 +5,4 @@
 /dist
 /src/__pycache__
 *.pkl
+*.spec
