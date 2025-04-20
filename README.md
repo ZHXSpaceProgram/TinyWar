@@ -2,13 +2,16 @@
 
 ## How to Play?
 
-- Prepare environment
+If you are on Windows:
+- Download the latest [release](https://github.com/ZHXSpaceProgram/TinyWar/releases)
+- Unzip
+- Run the excutable file
+
+To run source code:
+
+
 ```
 pip install pygame
-```
-
-- Let's play!
-```
 python src/main.py
 ```
 
