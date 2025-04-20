@@ -1,0 +1,559 @@
+from pygame.locals import *
+from random import randint
+from const import *
+from game import *
+import pygame
+import ctypes
+import sys
+import os
+
+pygame.init()
+
+# 创建无边框全屏窗口
+screen = pygame.display.set_mode((0, 0), pygame.NOFRAME)
+display_info = pygame.display.Info()
+window_width, window_height = display_info.current_w, display_info.current_h
+
+# 创建实际用于游戏逻辑的画布 surface，尺寸为固定的 SCREEN_WIDTH/SCREEN_HEIGHT
+game_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("TinyWar")
+
+# 自动切换英文输入法
+try:
+    original_hkl = ctypes.windll.user32.GetKeyboardLayout(0)
+    KLF_SETFORPROCESS = 0x100
+    HKL_EN_US = 0x04090409
+    _ = ctypes.windll.user32.ActivateKeyboardLayout(HKL_EN_US, KLF_SETFORPROCESS)
+except: pass
+
+"""Global Variables"""
+
+gm: GameManager = None
+frameclock = pygame.time.Clock()
+cur_state = GameState.PLAYING
+bgm_list = os.listdir('assets/sound/bgm')
+bgm_index = randint(0, len(bgm_list) - 1)
+
+# UI
+info_string: list = list(DEFAULT_INFO_STRING)
+overlay = None
+hint_counter = 0
+
+# Shop
+shop: Shop = None
+shop_last_ope_item = None # 检查鼠标所在的物品有没有变化
+shop_open_delay_counter = 0
+
+# 边框起始位置
+start_x = (window_width - SCREEN_WIDTH) // 2
+start_y = (window_height - SCREEN_HEIGHT) // 2
+winners = None
+right_click_view_counter = 0
+right_click_view_coordinates = None
+
+
+# 音乐
+pygame.mixer.init()
+pygame.mixer.music.set_volume(0.05)
+
+# 搜索可用关卡
+available_levels = []
+for file in os.listdir("assets/map"):
+    if file.startswith("map") and file.endswith(".txt"):
+        level_str = file[3:-4]  # 提取关卡数字
+        if os.path.exists(f"assets/map/unit{level_str}.txt"):
+            available_levels.append(level_str)
+
+try:
+    gm = GameManager.load()
+    show_hint(HINTS.LOAD)
+except:
+    gm = GameManager()
+
+"""
+------------  Functions  -------------------------------------------------------  Functions  --------------
+"""
+
+def show_help_string():
+    global info_string
+    for i in range(0, len(HELP_STRING), 2):
+        if info_string == HELP_STRING[i:i+2]:
+            info_string = HELP_STRING[i+2:i+4] if i + 2 < len(HELP_STRING) else list(DEFAULT_INFO_STRING)
+            break
+    else:
+        info_string = HELP_STRING[0:2]
+
+"""str should be in HINTS"""
+def show_hint(str, time=HINT_COUNTER_DEF):
+    global info_string, hint_counter
+    if str in HINTS.__dict__.values():
+        info_string = [str, '']
+        if time != -1:
+            hint_counter = time
+
+
+def play_bgm():
+    global bgm_index
+    if not pygame.mixer.music.get_busy():
+        try:
+            pygame.mixer.music.load(f'assets/sound/bgm/{bgm_list[bgm_index]}')
+            pygame.mixer.music.play()
+        except Exception as e:
+            print(f"Error loading BGM: {e}")
+        bgm_index += 1
+        if bgm_index >= len(bgm_list):
+            bgm_index = 0
+
+def selected_is_shop():
+    selected = gm.selected_unit
+    return selected and isinstance(selected, Build) \
+        and selected.player_id == gm.cur_player_id and selected.shop_type!=0
+
+def select_unit(grid_x, grid_y):
+    """选择单位，同时检查是否需要打开商店"""
+    global shop, shop_open_delay_counter, info_string
+    gm.select_unit(grid_x, grid_y)
+    if selected_is_shop():
+        shop = Shop(gm.selected_unit)
+        shop_open_delay_counter = SHOP_OPEN_DELAY_COUNTER_DEF
+        info_string = ['','']
+
+def quit_game():
+    try:
+        ctypes.windll.user32.ActivateKeyboardLayout(original_hkl, KLF_SETFORPROCESS)
+    except: pass
+    finally:
+        pygame.quit()
+        sys.exit()
+
+"""
+-----------  Classes  -------------------------------------------------------  Classes  -----------------
+"""
+
+
+class Typing:
+    """abstrct class, no instance"""
+    typed_string = None # None 表示未处于输入状态
+    cur_state: str = None # 目前在输入的字段
+    StateDict = {
+        'level': {
+            'info_string': ['Please type the number of map:', f"{', '.join(sorted(available_levels))}"],
+            'enter_func': lambda: Typing._typing_level_enter_func()
+        },
+    }
+
+    def is_typing():
+        return Typing.typed_string!= None
+
+    def enter_typing(state):
+        global info_string
+        info_string = Typing.StateDict[state]['info_string']
+        Typing.cur_state = state
+        Typing.typed_string = ''
+
+    def exit_typing():
+        global info_string
+        info_string = list(DEFAULT_INFO_STRING)
+        Typing.typed_string = None
+        Typing.cur_state = None
+    def handle_event(event):
+        global info_string
+        # 数字
+        if event.type == KEYDOWN:
+            # 输入数字
+            if event.unicode.isdigit():
+                if Typing.typed_string:
+                    Typing.typed_string += event.unicode
+                else:
+                    Typing.typed_string = event.unicode
+                info_string[0] = Typing.typed_string + '  '*(8-len(Typing.typed_string)) + \
+                    '([Enter] to confirm, [Backspace] to exit)'
+            # 退格键退出
+            elif event.key == K_BACKSPACE:
+                Typing.exit_typing()
+            # 回车键确认
+            elif event.key == K_RETURN and Typing.typed_string:
+                Typing.StateDict[Typing.cur_state]['enter_func']()
+        elif event.type == MOUSEBUTTONDOWN:
+            # 右键退出
+            if event.button == 3:
+                Typing.exit_typing()
+    
+    def _typing_level_enter_func():
+        global gm
+        if Typing.typed_string in available_levels:
+            try:
+                gm = GameManager(Typing.typed_string)
+                show_hint(HINTS.LOAD)
+            except Exception as e:
+                print(f"Error loading level: {e}")
+                show_hint(HINTS.FILE_ERROR)
+            finally:
+                Typing.typed_string = None
+        else:
+            show_hint(HINTS.INVALID_LEVEL)
+            Typing.typed_string = None
+
+class Frame_Timer:
+    """
+    用于调试的计时器
+    单位是毫秒
+    """
+    CNT = 20 # [SET] 多少帧打印一次
+    AVG = 200 # [SET] 最多多少帧计算平均值
+    dict = {}
+    cur = CNT
+    __start_time = None
+    def start_timer():
+        Frame_Timer.__start_time = pygame.time.get_ticks()  # 获取当前时间戳（毫秒）
+    def end_timer(timer_name='default'):
+        if timer_name not in Frame_Timer.dict:
+            Frame_Timer.dict[timer_name] = []
+        end_time = pygame.time.get_ticks()  # 获取当前时间戳（毫秒）
+        list = Frame_Timer.dict[timer_name]
+        list.append(end_time - Frame_Timer.__start_time)
+        if len(list) > Frame_Timer.AVG:
+            Frame_Timer.dict[timer_name].pop(0)
+    def print():
+        if Frame_Timer.cur == 0:
+            Frame_Timer.cur = Frame_Timer.CNT
+            # 显示实际帧率
+            print('\n\n')
+            fps = frameclock.get_fps()
+            print(f"FPS: {round(fps)}")
+            # 打印列表平均值
+            for name in Frame_Timer.dict:
+                list = Frame_Timer.dict[name]
+                if len(list) > 0:
+                    print(f"{name}: {sum(list)/len(list):.1f}   ({len(list)})")
+        else:
+            Frame_Timer.cur -= 1
+
+"""
+------------  游戏主循环  -----------------------------------------------------------------------  游戏主循环  ------------------------
+"""
+
+
+
+while True:
+    # 播放背景音乐
+    play_bgm()
+
+    """
+    ------------  Handling Events  ---------------------------------------  Handling Events  ------------
+    """
+    
+    for event in pygame.event.get():
+        if event.type == QUIT:
+            quit_game()
+        if event.type == KEYDOWN:
+            if event.key == K_ESCAPE:
+                quit_game()
+        if cur_state == GameState.MENU:
+            if event.type == KEYDOWN or event.type == MOUSEBUTTONDOWN:
+                cur_state = GameState.PLAYING
+                pygame.time.delay(200)
+        elif cur_state == GameState.PLAYING:
+            # 如果处于输入关卡状态
+            if Typing.is_typing():
+                Typing.handle_event(event)
+                continue
+            if event.type == KEYDOWN:
+                # WSAD移动地图
+                if gm.map.height > MAP_VIEW_SIZE:
+                    if event.key == K_w:
+                        gm.map_y = max(0, gm.map_y - 4)
+                    elif event.key == K_s:
+                        gm.map_y = min(gm.map.height - MAP_VIEW_SIZE, gm.map_y + 4)
+                if gm.map.width > MAP_VIEW_SIZE:
+                    if event.key == K_a:
+                        gm.map_x = max(0, gm.map_x - 4)
+                    elif event.key == K_d:
+                        gm.map_x = min(gm.map.width - MAP_VIEW_SIZE, gm.map_x + 4)
+                if event.key == K_SPACE:
+                    gm.next_turn()
+                elif event.key == K_h:
+                    show_help_string()
+                elif event.key == K_F5:
+                    gm.save()
+                    show_hint(HINTS.SAVE)
+                elif event.key == K_F9:
+                    try:
+                        gm = GameManager.load()
+                        show_hint(HINTS.LOAD)
+                    except FileNotFoundError:
+                        print("err")
+                        show_hint(HINTS.NO_FILE)
+                elif event.key == K_F1:
+                    Typing.enter_typing('level')
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_x, mouse_y = pygame.mouse.get_pos()
+                grid_x, grid_y = (mouse_x - start_x - SCREEN_MARGIN) // TILE_SIZE, (mouse_y - start_y - SCREEN_MARGIN) // TILE_SIZE
+                grid_x += gm.map_x
+                grid_y += gm.map_y
+                # 检查是否在地图范围内
+                if 0 <= grid_x < gm.map.width and 0 <= grid_y < gm.map.height:
+                    if event.button == 1:
+                        selected = gm.selected_unit
+                        # 如果有选中单位，尝试移动和攻击
+                        if selected and selected.player_id == gm.cur_player_id:
+                            res1, res2 = False, False
+                            # 尝试移动
+                            if not selected.moved and selected.movement > 0:
+                                res1 = gm.move_selected_unit(grid_x, grid_y)
+                                gm.calculate_possible_moves(True)
+                            # 尝试攻击
+                            if not selected.attacked and selected.attack_range[1] > 0:
+                                res2 = gm.attack(grid_x, grid_y)
+                                if res2:
+                                    winners = gm.check_game_over()
+                                    if winners:
+                                        cur_state = GameState.GAME_OVER
+                            # 根据尝试结果管理选择状态
+                            if not res1:  # 如果移动失败，不管攻击成不成功，都取消选择
+                                if grid_x != gm.selected_unit.x or grid_y != gm.selected_unit.y:
+                                    gm.deselect()
+                                    if not res2:  # 如果移动和攻击都不成功，且点击了不同的位置，则尝试选择
+                                        select_unit(grid_x, grid_y)
+                                else:  # 如果点击了相同的单位，不尝试选择（希望取消选择）
+                                    gm.deselect()
+                        # 选择了敌方单位
+                        elif gm.selected_unit:
+                            if grid_x != gm.selected_unit.x or grid_y != gm.selected_unit.y:
+                                gm.deselect()
+                                select_unit(grid_x, grid_y)
+                            else:
+                                gm.deselect()
+                        # 没有选中单位，尝试选择单位
+                        else:
+                            select_unit(grid_x, grid_y)
+                    elif event.button == 3:  # 右键
+                        # 显示原地的可能攻击位置
+                        gm.select_unit(grid_x, grid_y, True)
+                        right_click_view_coordinates = (grid_x, grid_y)
+                        right_click_view_counter = RIGHT_CLICK_VIEW_COUNTER_DEF
+                if event.button == 2:
+                    gm.next_turn()
+                    
+        elif cur_state == GameState.GAME_OVER:
+            if event.type == KEYDOWN or event.type == MOUSEBUTTONDOWN:
+                cur_state = GameState.PLAYING
+                pygame.time.delay(200)
+        elif cur_state == GameState.SHOP:
+            if event.type == MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    item = shop.get_item(event.pos[0]-start_x, event.pos[1]-start_y)
+                    if item:
+                        res = gm.players[gm.cur_player_id].buy_item(item, shop.x, shop.y)
+                        shop.build.attacked = True
+                        if res:
+                            shop = None
+                            cur_state = GameState.PLAYING
+                        else:
+                            info_string = [f'No enough money to buy {item}.', '']
+                            shop_last_ope_item = item
+                elif event.button == 3:
+                    shop = None
+                    info_string = list(DEFAULT_INFO_STRING)
+                    cur_state = GameState.PLAYING
+            # 鼠标悬停
+            elif event.type == MOUSEMOTION:
+                item = shop.get_item(event.pos[0]-start_x, event.pos[1]-start_y)
+                if item:
+                    if shop_last_ope_item != item:
+                        # item 字符串中的单词首字母大写
+                        info_string = [capital_words(item), '']
+                        if item in Unit.PROPERTIES:
+                            info_string[1] = f"{Unit.PROPERTIES[item]['description']}"
+                else:
+                    info_string[0] = SHOP_DEFAULT_STRING[0].format(type = capital_words(shop.build.type))
+                    info_string[1] = SHOP_DEFAULT_STRING[1]
+                shop_last_ope_item = item
+
+    """
+    ------------  Rendering  ----------------------------------------------------------  Rendering  ------------
+    """
+
+
+    if cur_state == GameState.MENU:
+        cover_img = pygame.image.load("assets/cover.png")
+        cover_img = pygame.transform.scale(cover_img, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        game_surface.blit(cover_img, (0, 0))
+    elif cur_state == GameState.PLAYING:
+        game_surface.fill((20, 20, 20))
+        # 绘制地图
+        gm.draw_map(game_surface)
+        # 绘制单位
+        for player in gm.players:
+            for build in player.builds:
+                # 查看是否有重叠单位
+                if build.stackable:
+                    build.build_stacked = False
+                    for unit in player.units:
+                        if unit.x == build.x and unit.y == build.y:
+                            build.build_stacked = True
+                build.draw(game_surface, gm.map_x, gm.map_y)
+            for unit in player.units:
+                unit.draw(game_surface, gm.map_x, gm.map_y)
+        # 绘制和选择相关的内容
+        if gm.selected_unit:
+            selected = gm.selected_unit
+            # 绘制可能的移动位置
+            if not selected.moved or selected.player_id != gm.cur_player_id:
+                if selected.movement > 0:
+                    for (x, y) in gm.possible_moves:
+                        x-= gm.map_x
+                        y-= gm.map_y
+                        if x<0 or x>=MAP_VIEW_SIZE or y<0 or y>=MAP_VIEW_SIZE:
+                            continue
+                        move_rect = pygame.Rect(x * TILE_SIZE + SCREEN_MARGIN, y * TILE_SIZE + SCREEN_MARGIN, TILE_SIZE, TILE_SIZE)
+                        pygame.draw.rect(game_surface, (100, 255, 100), move_rect, 2)
+            # 绘制攻击范围（right_click)
+            if right_click_view_counter > 0:
+                if selected.attack_range[1] > 0:
+                    for dy in range(-gm.selected_unit.attack_range[1], gm.selected_unit.attack_range[1] + 1):
+                        for dx in range(-gm.selected_unit.attack_range[1], gm.selected_unit.attack_range[1] + 1):
+                            manhattan_distance = abs(dx) + abs(dy)
+                            if manhattan_distance < gm.selected_unit.attack_range[0] or manhattan_distance > gm.selected_unit.attack_range[1]:
+                                continue
+                            x = right_click_view_coordinates[0] + dx - gm.map_x
+                            y = right_click_view_coordinates[1] + dy - gm.map_y
+                            if x < 0 or x >= MAP_VIEW_SIZE or y < 0 or y >= MAP_VIEW_SIZE:
+                                continue
+                            attack_rect = pygame.Rect(x * TILE_SIZE + SCREEN_MARGIN, y * TILE_SIZE + SCREEN_MARGIN, TILE_SIZE, TILE_SIZE)
+                            # pygame.draw.rect(game_surface, (255, 192, 192), attack_rect, 1)
+                            pygame.draw.circle(game_surface, PINK, (attack_rect.centerx, attack_rect.centery), 2)
+            # 绘制可能的攻击位置
+            if not gm.selected_unit.attacked or gm.selected_unit.player_id != gm.cur_player_id:
+                if selected.attack_range[1] > 0:
+                    for pair in gm.possible_attacks:
+                        x, y = pair[1]
+                        x -= gm.map_x
+                        y -= gm.map_y
+                        if x < 0 or x >= MAP_VIEW_SIZE or y < 0 or y >= MAP_VIEW_SIZE:
+                            continue
+                        attack_rect = pygame.Rect(
+                            x * TILE_SIZE + SCREEN_MARGIN, y * TILE_SIZE + SCREEN_MARGIN, TILE_SIZE, TILE_SIZE)
+                        pygame.draw.rect(game_surface, PINK, attack_rect, 2)
+            # 绘制选中单位边框
+            x = gm.selected_unit.x - gm.map_x
+            y = gm.selected_unit.y - gm.map_y
+            if 0 <= x < MAP_VIEW_SIZE and 0 <= y < MAP_VIEW_SIZE:
+                select_rect = pygame.Rect(
+                    x * TILE_SIZE + SCREEN_MARGIN, 
+                    y * TILE_SIZE + SCREEN_MARGIN, 
+                    TILE_SIZE, TILE_SIZE
+                )
+                if right_click_view_counter > 0:
+                    pygame.draw.rect(game_surface, WHITE, select_rect, 1)
+                else:
+                    pygame.draw.rect(game_surface, YELLOW, select_rect, 3)
+        # 绘制特效
+        for effect in gm.effects:
+            if not effect.update():
+                gm.effects.remove(effect)
+            effect.draw(game_surface, gm.map_x, gm.map_y)
+
+        # 绘制UI信息
+        font = pygame.font.SysFont('Calibri', 20, True)
+        turn_text = font.render(f"Turn {gm.turn:<3} {gm.players[gm.cur_player_id].name:<4}", True, WHITE)
+        game_surface.blit(turn_text, (20, 18))
+
+        # 绘制多行文本, 在右边
+        multiline_string = [f'Map {gm.level}']
+        for player in gm.players:
+            multiline_string.append('')
+            multiline_string.append(f"— Player {player.name:<4} — <" if player.id == gm.cur_player_id else
+                                    f"— Player {player.name:<4} —")
+            multiline_string.append(f"Money: {player.money}")
+        font = pygame.font.SysFont('Calibri', 20)
+        for i, line in enumerate(multiline_string):
+            text = font.render(line, True, WHITE)
+            game_surface.blit(text, (SCREEN_WIDTH - 250, 40 + i * 25))
+
+        # 底部info
+        if info_string[0] and info_string[0][-1]=='!':
+            font = pygame.font.SysFont('Calibri', 20, True)
+        info_text = [font.render(i, True, WHITE) for i in info_string]
+        game_surface.blit(info_text[0], (20, SCREEN_HEIGHT - 63))
+        game_surface.blit(info_text[1], (20, SCREEN_HEIGHT - 38))
+
+    elif cur_state == GameState.GAME_OVER:
+        # 半透明遮罩
+        if not overlay:
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+            overlay.fill((0, 0, 0))
+            overlay.set_alpha(92)
+            game_surface.blit(overlay, (0, 0))
+        # 文字
+        font = pygame.font.SysFont(None, 72)
+        win_text = ', '.join([PlayerNameDict[winner] for winner in winners])
+        info_string = [win_text+" won!", '']
+        win_text += f" Win{'s' if len(winners)== 1 else ''}!"
+        game_over_text = font.render(win_text, True, RED if 0 in winners else BLUE)
+        game_surface.blit(game_over_text, (SCREEN_WIDTH // 2 - game_over_text.get_width() // 2,
+                                           SCREEN_HEIGHT // 2 - font.get_height() // 2))
+    elif cur_state == GameState.SHOP:
+        game_surface.fill((20, 20, 20))
+        shop.draw(game_surface, gm.cur_player().money)
+        font = pygame.font.SysFont('Calibri', 20)
+        font_b = pygame.font.SysFont('Calibri', 20, True)
+        font_b_l = pygame.font.SysFont('Calibri', 24, True)
+
+        # 底部info
+        info_text1 = font.render(info_string[1], True, WHITE)
+        if len(info_string[0]) < 23: # 不是提示信息就加粗
+            info_text0 = font_b.render(info_string[0], True, WHITE)
+        else:
+            info_text0 = font.render(info_string[0], True, WHITE)
+        game_surface.blit(info_text0, (SHOP_MARGIN, SCREEN_HEIGHT - 75))
+        game_surface.blit(info_text1, (SHOP_MARGIN, SCREEN_HEIGHT - 50))
+
+        # Money
+        if len(info_string[1]) <= 50:
+            money_text1 = font.render(f"Money:", True, GREY)
+            money_text2 = font_b_l.render(f"{gm.cur_player().money}", True, WHITE)
+            game_surface.blit(money_text1, (617 - money_text2.get_width(), 10+SHOP_IMG_Y))
+            game_surface.blit(money_text2, (688 - money_text2.get_width(), 7+SHOP_IMG_Y))
+        
+        # Image
+        if len(info_string[1]) <= 65:
+            if shop_last_ope_item in Unit.PROPERTIES:
+                pygame.draw.rect(game_surface, (220, 220, 220), 
+                    (SHOP_IMG_X, SHOP_IMG_Y, TILE_SIZE, TILE_SIZE), 0) # 背景
+                unit_img = pygame.image.load(f"assets/unit/{shop_last_ope_item}_{gm.cur_player_id}.png")
+                game_surface.blit(unit_img, (SHOP_IMG_X, SHOP_IMG_Y))
+            else:
+                pygame.draw.rect(game_surface, (128, 128, 128), 
+                    (SHOP_IMG_X, SHOP_IMG_Y, TILE_SIZE, TILE_SIZE), 0) # 背景
+
+    # game_surface边框
+    border_rect = pygame.Rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
+    pygame.draw.rect(game_surface, WHITE, border_rect, 1)
+
+    # 将游戏画面绘制到全屏中心
+    screen.blit(game_surface, (start_x, start_y))
+
+    # Counters
+    if right_click_view_counter > 0:
+        right_click_view_counter -= 1
+        # 如果在当前单位上
+        if right_click_view_counter == 0 and gm.selected_unit and gm.selected_unit.player_id != gm.cur_player_id:
+            gm.deselect()
+    if hint_counter > 0:
+        hint_counter -= 1
+        if hint_counter == 0 and info_string[0] in HINTS.__dict__.values():
+            info_string = list(DEFAULT_INFO_STRING)
+    if selected_is_shop():
+        if shop_open_delay_counter > 0:
+            shop_open_delay_counter -= 1
+        else:
+            cur_state = GameState.SHOP
+            gm.deselect()
+    else:
+        shop_open_delay_counter = 0
+
+    # Frame_Timer.print()
+
+    pygame.display.flip()
+    frameclock.tick(FPS)

@@ -1,0 +1,6 @@
+1	7	commando	0
+1	8	tank	0
+1	9	mortar	0
+5	7	commando	1
+5	8	tank	1
+5	9	mortar	1
