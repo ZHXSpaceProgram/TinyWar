@@ -1,5 +1,7 @@
 /.vscode
 /develop
 /env
+/build
+/dist
 /src/__pycache__
 *.pkl
