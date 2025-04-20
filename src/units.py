@@ -21,6 +21,9 @@ class Unit:
             self.move_type = self.PROPERTIES[type]['move_type']
             if 'anti_air' in self.PROPERTIES[type]:
                 self.anti_air = self.PROPERTIES[type]['anti_air']
+            if 'anti_sub' in self.PROPERTIES[type]:
+                self.anti_sub = self.PROPERTIES[type]['anti_sub']
+
 
     """
     movement:
@@ -53,7 +56,7 @@ class Unit:
             'armor_type' : 0,
             'move_type' : MoveType.Feet,
             'price' : 10,
-            'description' : '123456789|123456789|123456789|123456789|123456789|123456789|12345',
+            'description' : '123456789|123456789|123456789|123456789|123456789|123456789|123456789|123456789|',
         },
         "tank": {
             'movement' : 6,
@@ -64,7 +67,7 @@ class Unit:
             'armor_type' : 1,
             'move_type' : MoveType.Track,
             'price' : 35,
-            'description' : '123456789|123456789|123456789|123456789|123456789|123456789|'
+            'description' : '123456789|123456789|123456789|123456789|123456789|123456789|123456789|'
         },
         "mortar": {
             'movement' : 4,
@@ -85,9 +88,10 @@ class Unit:
             'weapon_type' : 1,
             'armor_type' : 1,
             'move_type' : MoveType.Air,
-            'anti_air' : True,
             'price' : 65,
-            'description' :'fighter'
+            'description' :'fighter',
+
+            'anti_air' : True,
         },
         "bomber": {
            'movement' : 4,
@@ -98,7 +102,58 @@ class Unit:
             'armor_type' : 0,
             'move_type' : MoveType.Air,
             'price' : 85,
-            'description' :'bomber'
+            'description' :'bomber',
+
+            'anti_sub' : True,
+        },
+        "destroyer": {
+            'movement': 6,
+            'attack_range' : (1, 1),
+            'health': 90,
+            'attack': 17,
+            'weapon_type': 0,
+            'armor_type': 1,
+            'move_type': MoveType.Sea,
+            'price': 65,
+            'description': 'destroyer',
+
+            'anti_sub' : True,
+            'anti_air' : True,
+        },
+        "submarine": {
+           'movement': 4,
+            'attack_range': (1, 1),
+            'health': 25,
+            'attack': 35,
+            'weapon_type': 2,
+            'armor_type': 0,
+            'move_type': MoveType.Sub,
+            'price': 65,
+            'description': 'submarine',
+
+            'anti_sub': True,
+        },
+        "battleship": {
+            'movement': 5,
+            'attack_range': (1, 1),
+            'health': 140,
+            'attack': 50,
+            'weapon_type': 2,
+            'armor_type': 2,
+            'move_type': MoveType.Sea,
+            'price': 80,
+            'description': 'battleship',
+        },
+        "cruiser": {
+            'movement': 4,
+            'attack_range': (3, 6),
+            'health': 60,
+            'attack': 35,
+            'weapon_type': 2,
+            'armor_type': 1,
+            'move_type': MoveType.Sea,
+            'price': 75,
+            'description': 'cruiser',
         }
     }
 
@@ -115,17 +170,16 @@ class Unit:
         if x>=0 and y>=0 and x<MAP_VIEW_SIZE and y<MAP_VIEW_SIZE:
             # 绘制单位
             try:
-                # unit_img = pygame.image.load(f"assets/unit/{self.type}_{self.player_id}.png")
                 unit_img = preload_unit_imgs[f"{self.type}_{self.player_id}.png"]
+                unit_img = pygame.transform.scale(unit_img, (TILE_SIZE, TILE_SIZE))
+                if not isinstance(self, Build) and self.move_type == MoveType.Sub:
+                    unit_img.set_alpha(245)
                 screen.blit(unit_img, rect)
             except:
-                # TODO:
-                # print(f"Error loading image for unit type {self.type} and player {self.player}.")
-                pass
-            
+                print(f"Error loading image for unit type {self.type} and player {self.player}.")
             # DEBUG
-            if self.type == "factory":
-                pygame.draw.rect(screen, (255, 0, 0), rect, 4)
+            # if self.type == "factory":
+            #     pygame.draw.rect(screen, (255, 0, 0), rect, 4)
 
             if not (isinstance(self, Build) and self.build_stacked):
                 # 绘制血条
@@ -163,22 +217,30 @@ class Build(Unit):
         self.armor_type = 1
         self.build_stacked = False
 
-        if type in self.PROPERTIES:
-            self.shop_type = self.PROPERTIES[type]['shop_type']
-            self.stackable = self.PROPERTIES[type]['stackable']
-            
+        # read from PROPERTIES
+        self.shop_type = self.PROPERTIES[type]['shop_type']
+        self.stackable = self.PROPERTIES[type]['stackable']
+        self.capturable = self.PROPERTIES[type]['capturable']
+        self.income = self.PROPERTIES[type]['income']
 
+    """
+    if capturable, then it cannot be attacked
+    """
     PROPERTIES = {
         "factory": {
             'shop_type' : SHOP_TYPE.GROUND,
             'stackable' : True,
-            
+            'capturable' : False,
+            'income': 5
         },
         "airport": {
         },
         "shipyard": {
         },
         "city": {
+            'shop_type' : SHOP_TYPE.NONE,
+            'stackable' : True,
+            'capturable' : True,
             'income': 5
         },
     }

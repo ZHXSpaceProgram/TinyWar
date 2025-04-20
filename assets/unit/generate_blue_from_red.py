@@ -7,7 +7,10 @@ import numpy as np
 增加unit的时候，只需用红色绘制，命名为TYPE_0.png。然后运行这个脚本，即可自动生成蓝色的TYPE_1.png。
 """
 
-def shift_hue(img, shift_deg):
+from PIL import Image
+import numpy as np
+
+def shift_hue(img, shift_deg, grayscale=False):
     img = img.convert('RGBA')
     arr = np.array(img).astype('float32') / 255.0
 
@@ -43,6 +46,12 @@ def shift_hue(img, shift_deg):
     b2 = np.choose(i % 6, [p, p, t, v, v, q])
 
     rgb_shifted = np.stack([r2, g2, b2], axis=2)
+
+    # Convert to grayscale if requested
+    if grayscale:
+        grayscale_value = np.dot(rgb_shifted, [0.2989, 0.5870, 0.1140])  # Standard luminance weights
+        rgb_shifted = np.stack([grayscale_value] * 3, axis=2)  # increase brightness for better contrast
+
     rgba = np.concatenate([rgb_shifted, alpha], axis=2)
     rgba = (rgba * 255).astype('uint8')
     return Image.fromarray(rgba, mode='RGBA')
@@ -55,14 +64,19 @@ def process_folder(folder_path):
                 print(f"{base}_1.png already exists, skipping.")
                 continue
             input_path = os.path.join(folder_path, filename)
-            output_path = os.path.join(folder_path, f'{base}_1.png')
+            output_path1 = os.path.join(folder_path, f'{base}_1.png')
+            output_path_neg1 = os.path.join(folder_path, f'{base}_-1.png')
+            print(f"Processing {filename} → {base}_1.png...")
 
-            print(f"Processing {filename} → {base}_1.png")
+            if base in ['city']:  # 可能中立的建筑
+                img = Image.open(input_path)
+                img = shift_hue(img, 0, True)  # 生成中立
+                img.save(output_path_neg1)
 
             img = Image.open(input_path)
-            img = shift_hue(img, 220) # 色调偏转角度 -------------------------- [可调节]
+            img = shift_hue(img, 220)  # 色调偏转角度 -------------------------- [可调节]
             img = img.transpose(Image.FLIP_LEFT_RIGHT)
-            img.save(output_path)
+            img.save(output_path1)
 
 if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))

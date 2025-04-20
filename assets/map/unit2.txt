@@ -4,7 +4,7 @@
 4	1	commando	1
 4	2	tank	1
 4	3	mortar	1
-2	2	factory	0
+2	2	factory	-1
 
 # air
 
