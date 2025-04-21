@@ -28,9 +28,11 @@ except: pass
 
 """Global Variables"""
 
+is_debug = len(sys.argv) > 1 and sys.argv[1] == 'debug'
+
 gm: GameManager = None
 frameclock = pygame.time.Clock()
-cur_state = GameState.PLAYING
+cur_state = GameState.PLAYING if is_debug else GameState.MENU
 bgm_list = os.listdir('assets/sound/bgm')
 bgm_index = randint(0, len(bgm_list) - 1)
 
@@ -51,6 +53,10 @@ winners = None
 right_click_view_counter = 0
 right_click_view_coordinates = None
 
+# 鼠标拖动
+is_dragging = False
+drag_start_pos = None
+drag_start_map_pos = None
 
 # 音乐
 pygame.mixer.init()
@@ -64,11 +70,6 @@ for file in os.listdir("assets/map"):
         if os.path.exists(f"assets/map/unit{level_str}.txt"):
             available_levels.append(level_str)
 
-try:
-    gm = GameManager.load()
-    show_hint(HINTS.LOAD)
-except:
-    gm = GameManager()
 
 """
 ------------  Functions  -------------------------------------------------------  Functions  --------------
@@ -109,14 +110,17 @@ def selected_is_shop():
     return selected and isinstance(selected, Build) \
         and selected.player_id == gm.cur_player_id and selected.shop_type!=0
 
-def select_unit(grid_x, grid_y):
-    """选择单位，同时检查是否需要打开商店"""
+def left_click_select_unit(grid_x, grid_y):
+    """处理左键选择，检查是否打开交互（如商店）"""
     global shop, shop_open_delay_counter, info_string
-    gm.select_unit(grid_x, grid_y)
-    if selected_is_shop():
-        shop = Shop(gm.selected_unit)
-        shop_open_delay_counter = SHOP_OPEN_DELAY_COUNTER_DEF
-        info_string = ['','']
+    if gm.select_unit(grid_x, grid_y):
+        if selected_is_shop():
+            shop = Shop(gm.selected_unit)
+            shop_open_delay_counter = SHOP_OPEN_DELAY_COUNTER_DEF
+            info_string = ['','']
+        return True
+    else:
+        return False
 
 def quit_game():
     try:
@@ -167,7 +171,7 @@ class Typing:
                 else:
                     Typing.typed_string = event.unicode
                 info_string[0] = Typing.typed_string + '  '*(8-len(Typing.typed_string)) + \
-                    '([Enter] to confirm, [Backspace] to exit)'
+                    '([Enter] to confirm, [Backspace|MMB] to exit)'
             # 退格键退出
             elif event.key == K_BACKSPACE:
                 Typing.exit_typing()
@@ -233,16 +237,18 @@ class Frame_Timer:
 ------------  游戏主循环  -----------------------------------------------------------------------  游戏主循环  ------------------------
 """
 
-
+try:
+    gm = GameManager.load()
+    show_hint(HINTS.LOAD)
+except:
+    gm = GameManager()
 
 while True:
     # 播放背景音乐
     play_bgm()
-
     """
     ------------  Handling Events  ---------------------------------------  Handling Events  ------------
     """
-    
     for event in pygame.event.get():
         if event.type == QUIT:
             quit_game()
@@ -282,17 +288,18 @@ while True:
                         gm = GameManager.load()
                         show_hint(HINTS.LOAD)
                     except FileNotFoundError:
-                        print("err")
+                        print("Game save not found.")
                         show_hint(HINTS.NO_FILE)
                 elif event.key == K_F1:
                     Typing.enter_typing('level')
-            if event.type == pygame.MOUSEBUTTONDOWN:
+            elif event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_x, mouse_y = pygame.mouse.get_pos()
                 grid_x, grid_y = (mouse_x - start_x - SCREEN_MARGIN) // TILE_SIZE, (mouse_y - start_y - SCREEN_MARGIN) // TILE_SIZE
-                grid_x += gm.map_x
-                grid_y += gm.map_y
+                if 0 <= grid_x < MAP_VIEW_SIZE and 0 <= grid_y < MAP_VIEW_SIZE:
+                    grid_x += gm.map_x
+                    grid_y += gm.map_y
                 # 检查是否在地图范围内
-                if 0 <= grid_x < gm.map.width and 0 <= grid_y < gm.map.height:
+                    # 处理地图范围内的左键
                     if event.button == 1:
                         selected = gm.selected_unit
                         # 如果有选中单位，尝试移动和攻击
@@ -314,27 +321,45 @@ while True:
                                 if grid_x != gm.selected_unit.x or grid_y != gm.selected_unit.y:
                                     gm.deselect()
                                     if not res2:  # 如果移动和攻击都不成功，且点击了不同的位置，则尝试选择
-                                        select_unit(grid_x, grid_y)
+                                        left_click_select_unit(grid_x, grid_y)
                                 else:  # 如果点击了相同的单位，不尝试选择（希望取消选择）
                                     gm.deselect()
                         # 选择了敌方单位
                         elif gm.selected_unit:
                             if grid_x != gm.selected_unit.x or grid_y != gm.selected_unit.y:
                                 gm.deselect()
-                                select_unit(grid_x, grid_y)
+                                left_click_select_unit(grid_x, grid_y)
                             else:
                                 gm.deselect()
-                        # 没有选中单位，尝试选择单位
-                        else:
-                            select_unit(grid_x, grid_y)
-                    elif event.button == 3:  # 右键
+                        # 没有选中单位，尝试选择单位；如果无法选择单位，进行拖动
+                        elif not left_click_select_unit(grid_x, grid_y):
+                            is_dragging = True
+                            drag_start_pos = (mouse_x, mouse_y)
+                            drag_start_map_pos = (gm.map_x, gm.map_y)
+                    # 右键
+                    elif event.button == 3:
                         # 显示原地的可能攻击位置
                         gm.select_unit(grid_x, grid_y, True)
                         right_click_view_coordinates = (grid_x, grid_y)
                         right_click_view_counter = RIGHT_CLICK_VIEW_COUNTER_DEF
                 if event.button == 2:
                     gm.next_turn()
-                    
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:
+                    is_dragging = False
+            elif event.type == pygame.MOUSEMOTION:
+                if is_dragging:
+                    mouse_x, mouse_y = pygame.mouse.get_pos()
+                    dx = (drag_start_pos[0] - mouse_x) // TILE_SIZE
+                    dy = (drag_start_pos[1] - mouse_y) // TILE_SIZE
+                    # 计算新的地图位置
+                    new_map_x = drag_start_map_pos[0] + dx
+                    new_map_y = drag_start_map_pos[1] + dy
+                    # 确保地图位置在有效范围内
+                    if gm.map.width > MAP_VIEW_SIZE:
+                        gm.map_x = max(0, min(gm.map.width - MAP_VIEW_SIZE, new_map_x))
+                    if gm.map.height > MAP_VIEW_SIZE:
+                        gm.map_y = max(0, min(gm.map.height - MAP_VIEW_SIZE, new_map_y))
         elif cur_state == GameState.GAME_OVER:
             if event.type == KEYDOWN or event.type == MOUSEBUTTONDOWN:
                 cur_state = GameState.PLAYING
@@ -373,8 +398,6 @@ while True:
     """
     ------------  Rendering  ----------------------------------------------------------  Rendering  ------------
     """
-
-
     if cur_state == GameState.MENU:
         cover_img = pygame.image.load("assets/cover.png")
         cover_img = pygame.transform.scale(cover_img, (SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -382,11 +405,11 @@ while True:
     elif cur_state == GameState.PLAYING:
         game_surface.fill((20, 20, 20))
         # 绘制地图
-        gm.draw_map(game_surface)
+        gm.map.draw(game_surface, gm.map_x, gm.map_y)
         # 绘制单位
         for player in gm.players:
             for build in player.builds:
-                # 查看是否有重叠单位
+                # 更新重叠状态
                 if build.stackable:
                     build.build_stacked = False
                     for unit in player.units:
@@ -395,6 +418,8 @@ while True:
                 build.draw(game_surface, gm.map_x, gm.map_y)
             for unit in player.units:
                 unit.draw(game_surface, gm.map_x, gm.map_y)
+        for unit in gm.neutral_player.builds:
+            unit.draw(game_surface, gm.map_x, gm.map_y)
         # 绘制和选择相关的内容
         if gm.selected_unit:
             selected = gm.selected_unit
@@ -469,7 +494,7 @@ while True:
         font = pygame.font.SysFont('Calibri', 20)
         for i, line in enumerate(multiline_string):
             text = font.render(line, True, WHITE)
-            game_surface.blit(text, (SCREEN_WIDTH - 250, 40 + i * 25))
+            game_surface.blit(text, (SCREEN_WIDTH - 250, SCREEN_MARGIN + i * 25))
 
         # 底部info
         if info_string[0] and info_string[0][-1]=='!':
@@ -477,7 +502,6 @@ while True:
         info_text = [font.render(i, True, WHITE) for i in info_string]
         game_surface.blit(info_text[0], (20, SCREEN_HEIGHT - 63))
         game_surface.blit(info_text[1], (20, SCREEN_HEIGHT - 38))
-
     elif cur_state == GameState.GAME_OVER:
         # 半透明遮罩
         if not overlay:
@@ -499,29 +523,30 @@ while True:
         font = pygame.font.SysFont('Calibri', 20)
         font_b = pygame.font.SysFont('Calibri', 20, True)
         font_b_l = pygame.font.SysFont('Calibri', 24, True)
-
         # 底部info
         info_text1 = font.render(info_string[1], True, WHITE)
         if len(info_string[0]) < 23: # 不是提示信息就加粗
             info_text0 = font_b.render(info_string[0], True, WHITE)
         else:
             info_text0 = font.render(info_string[0], True, WHITE)
-        game_surface.blit(info_text0, (SHOP_MARGIN, SCREEN_HEIGHT - 75))
-        game_surface.blit(info_text1, (SHOP_MARGIN, SCREEN_HEIGHT - 50))
-
+        game_surface.blit(info_text0, (SHOP_MARGIN, SCREEN_HEIGHT - SHOP_MARGIN - 25))
+        game_surface.blit(info_text1, (SHOP_MARGIN, SCREEN_HEIGHT - SHOP_MARGIN))
         # Money
-        if len(info_string[1]) <= 50:
+        usable_width = (SCREEN_WIDTH - 2 * SHOP_MARGIN - TILE_SIZE) // 10
+        if len(info_string[1]) <= usable_width - 15:
             money_text1 = font.render(f"Money:", True, GREY)
             money_text2 = font_b_l.render(f"{gm.cur_player().money}", True, WHITE)
-            game_surface.blit(money_text1, (617 - money_text2.get_width(), 10+SHOP_IMG_Y))
-            game_surface.blit(money_text2, (688 - money_text2.get_width(), 7+SHOP_IMG_Y))
-        
+            game_surface.blit(money_text1, (SCREEN_WIDTH - TILE_SIZE - 151 - money_text2.get_width(),
+                                            MONEY_Y))
+            game_surface.blit(money_text2, (SCREEN_WIDTH - TILE_SIZE - 80 - money_text2.get_width(), 
+                                            MONEY_Y - 3))
         # Image
-        if len(info_string[1]) <= 65:
+        if len(info_string[1]) <= usable_width:
             if shop_last_ope_item in Unit.PROPERTIES:
                 pygame.draw.rect(game_surface, (220, 220, 220), 
                     (SHOP_IMG_X, SHOP_IMG_Y, TILE_SIZE, TILE_SIZE), 0) # 背景
-                unit_img = pygame.image.load(f"assets/unit/{shop_last_ope_item}_{gm.cur_player_id}.png")
+                unit_img = preload_unit_imgs[f'{shop_last_ope_item}_{gm.cur_player_id}.png']
+                unit_img = pygame.transform.scale(unit_img, (TILE_SIZE, TILE_SIZE))
                 game_surface.blit(unit_img, (SHOP_IMG_X, SHOP_IMG_Y))
             else:
                 pygame.draw.rect(game_surface, (128, 128, 128), 
@@ -553,7 +578,8 @@ while True:
     else:
         shop_open_delay_counter = 0
 
-    # Frame_Timer.print()
+    # if is_debug:
+    #     Frame_Timer.print()
 
     pygame.display.flip()
     frameclock.tick(FPS)

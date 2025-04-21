@@ -1,13 +1,13 @@
 # Tiny War: 2D Pixel Turn-Based Strategy Game
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/f27097a8-8efe-476d-bba1-b86754c28b14" width="400" />
+  <img src="https://github.com/user-attachments/assets/21dc78d9-b036-4f21-afe7-f450a05e2617" width="400" />
 </div>
 
 ## How to Play?
 
 If you are on Windows:
-- Download `Game.zip` from the latest [release](https://github.com/ZHXSpaceProgram/TinyWar/releases)
+- Download `Game.zip` from [release](https://github.com/ZHXSpaceProgram/TinyWar/releases)
 - Unzip
 - Run the excutable file
 
