@@ -1,8 +1,8 @@
 # How to Design Map
 
 - You can easily design maps using `map_designer.xlsx`. 
-- After completing the design, copy the whole map and directly paste to `map{LEVEL}.txt`.
-- Create a `unit{LEVEL}.txt` file and add initial units and buildings.
+- After completing the design, copy the whole map and directly paste to `assets/map/map{LEVEL}.txt`.
+- Create a `assets/map/unit{LEVEL}.txt` file and add initial units and buildings.
 
 ### Format
 

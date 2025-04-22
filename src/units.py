@@ -9,7 +9,7 @@ class Unit:
         self.type = type
         self.player_id = player_id
         self.moved = False
-        self.attacked = False # 如果移动后无法攻击，直接设置为True，表示无法选中
+        self.attacked = False
 
         if type in self.PROPERTIES:
             self.movement = self.PROPERTIES[type]['movement']
@@ -23,6 +23,8 @@ class Unit:
                 self.anti_air = self.PROPERTIES[type]['anti_air']
             if 'anti_sub' in self.PROPERTIES[type]:
                 self.anti_sub = self.PROPERTIES[type]['anti_sub']
+            if 'blitz' in self.PROPERTIES[type]:
+                self.blitz = self.PROPERTIES[type]['blitz']
 
 
     """
@@ -40,8 +42,11 @@ class Unit:
     move_type:
     (as class MoveType)
 
-    anti_air:
+    anti_air/anti_sub:
     [Optional]
+
+    blitz:
+    [Optional] can move for an extra time after attack
 
     description: 
     should be no more than 65 characters
@@ -57,6 +62,8 @@ class Unit:
             'move_type' : MoveType.Feet,
             'price' : 10,
             'description' : '123456789|123456789|123456789|123456789|123456789|123456789|123456789|123456789|',
+
+            'blitz': True
         },
         "tank": {
             'movement' : 6,
@@ -190,7 +197,7 @@ class Unit:
                     health_rect = pygame.Rect(rect.left, rect.top, health_width, 3)
                     pygame.draw.rect(screen, health_color, health_rect)  
                 # 行动过的显示半透明遮罩
-                if self.attacked:
+                if self.attacked and self.moved:
                     overlay = pygame.Surface((TILE_SIZE, TILE_SIZE))
                     overlay.fill((0, 0, 0))
                     overlay.set_alpha(96) 

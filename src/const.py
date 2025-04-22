@@ -1,7 +1,9 @@
 import os
 import pygame
 
-# View
+
+# region View  ----------------------------------------  View  -----------
+
 SCREEN_WIDTH = 1000  # 800
 SCREEN_HEIGHT = 800  # 600
 MAP_VIEW_SIZE = 13  # 14
@@ -15,9 +17,10 @@ BLACK = (0, 0, 0)
 GREY = (128, 128, 128)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
-GREEN = (0, 255, 0)
+GREEN = (100, 255, 100)
 YELLOW = (255, 255, 0)
-PINK = (255, 100, 100)
+PINK = (255, 100, 120)
+LIGHT_PINK = (255, 182, 192)
 
 # SHOP
 SHOP_MARGIN = 50
@@ -29,9 +32,9 @@ SHOP_IMG_X, SHOP_IMG_Y = SCREEN_WIDTH - SHOP_MARGIN - TILE_SIZE, SCREEN_HEIGHT -
 MONEY_Y = SCREEN_HEIGHT - TILE_SIZE // 2 - 42
 
 # Counters
-RIGHT_CLICK_VIEW_COUNTER_DEF = FPS * 1.5
+RIGHT_VIEW_REMOVE_COUNTER_DEF = 5
 HINT_COUNTER_DEF = FPS * 1.5
-SHOP_OPEN_DELAY_COUNTER_DEF = 2
+SHOP_OPEN_DELAY_COUNTER_DEF = 5
 
 # Info Strings
 # use tuple to avoid unexpected modification
@@ -54,12 +57,15 @@ class HINTS:
     SAVE = 'Game Saved'
     LOAD = 'Game Loaded'
 
+# endregion View
+
+# region Game  ----------------------------------------  Game  -----------
+
 class GameState:
     MENU = 0
     PLAYING = 1
     GAME_OVER = 2
     SHOP = 3
-
 
 class EffectType:
     Death = 0
@@ -182,11 +188,15 @@ class Terrain:
         }
     }
 
+# endregion Game
+
 """Functions"""
 
 def capital_words(string):
     return ' '.join([word.capitalize() for word in string.split()])
 
+def draw_select_tile_rect(x, y, width=4):
+    return pygame.Rect(x * TILE_SIZE + SCREEN_MARGIN-width//2, y * TILE_SIZE + SCREEN_MARGIN-width//2, TILE_SIZE+width, TILE_SIZE+width)
 
 """Preload"""
 

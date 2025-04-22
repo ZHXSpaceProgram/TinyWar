@@ -8,7 +8,7 @@ import pickle
 class GameMap:
     # 从文件中读取地形信息
     def __init__(self, file):
-        # 注意：terrain[y][x] 先行后列
+        # 注意：terrain[y][x] 先y后x
         self.terrain = []
         with open(file, 'r') as f:
             for line in f:
@@ -94,6 +94,7 @@ class Player:
     def reset_units(self, fresh_for_display=False):
         for unit in self.units:
             if fresh_for_display:
+                unit.moved = True
                 unit.attacked = True
             else:
                 unit.moved = False
@@ -105,13 +106,16 @@ class Player:
                 build.attacked = False
     
     def buy_item(self, item, x, y) -> bool:
+        """
+        检查钱够不够
+        """
         if item in Unit.PROPERTIES.keys():
             if self.money < Unit.PROPERTIES[item]['price']:
                 return False
             self.add_unit(x, y, item, True)
             self.money -= Unit.PROPERTIES[item]['price']
             return True
-        else:
+        else:  # 选择了不存在的单位
             print(f"{item} not found in shop.")
             return False
 
@@ -126,8 +130,8 @@ class GameManager:
         self.cur_player_id = 0
         self.turn = 1
         self.selected_unit: Unit = None
-        self.possible_moves = set()
-        self.possible_attacks = []
+        self.possible_moves = set()  # 所有可到达的点（不含起点）
+        self.possible_attacks = []  # 元素是 ((from_x,from_y), (to_x,to_y), target_unit) 的元组
         self.read_units(f"assets/map/unit{level}.txt")
         for i, player in enumerate(self.players):
             if i != self.cur_player_id:
@@ -186,25 +190,38 @@ class GameManager:
         self.deselect()
 
     def select_unit(self, x, y, right_click=False):
-        """根据坐标判断能否选中，如果可以就执行（优先选择单位）"""
+        """
+        - 根据坐标判断能否选中（优先选择单位），如果可以就设置 selected_unit 
+        - 调用 calculate_possible_moves 搜索移动和攻击范围
+        """
         for player in self.players:
+            is_cur_player = player.id == self.cur_player_id
             for unit in player.units:
                 if unit.x == x and unit.y == y:
                     self.selected_unit = unit
-                    # 远程兵种（最小范围大于1）移动后不能攻击
-                    self.calculate_possible_moves(right_click or unit.moved, unit.attack_range[0]>1)
-                    print(f"DEBUG {unit.x=}, {unit.y=}, {unit.attacked=}, {unit.moved=}, {unit.type=}, {unit.health=}")
+                    # 如果单位移动过，或者是右键预览状态，就不考虑移动
+                    # 远程兵种（最小范围大于1）移动后不能攻击，考虑移动和原地攻击
+                    # 如果具有blitz属性且已经攻击，限制移动点数为 1
+                    override_movement = 1 if hasattr(unit, 'blitz') and unit.attacked and is_cur_player else None
+                    self._calculate_possible_moves(unit.moved and is_cur_player, 
+                                                   unit.attack_range[0]>1, override_movement)
                     return True
+            if right_click:
+                continue
             for build in player.builds:
                 if build.x == x and build.y == y:
                     self.selected_unit = build
                     if build.attack_range[1] > 0:
-                        self.calculate_possible_moves(True, True)
+                        self._calculate_possible_moves(True, True)
                     return True
         return False
     
     def move_selected_unit(self, x, y):
-        """根据坐标判断能否移动，如果可以就执行"""
+        """
+        - 根据坐标判断能否移动，如果可以就移动
+        - 如果移动后无法攻击（兵种特性限制或者没有攻击目标），直接把attacked设为True
+        return: 单位是否可以继续操作（即是否要求保持选中状态）
+        """
         if (x, y) in self.possible_moves:
             self.selected_unit.x = x
             self.selected_unit.y = y
@@ -212,16 +229,32 @@ class GameManager:
 
             play_sound(f"assets/sound/effect/move_{self.selected_unit.move_type}_{random.randint(0, 1)}.mp3")
 
-            # 从possible_attacks中检查是否有从当前位置的攻击
+            # 远程兵种（最大范围大于1）移动后不能攻击
+            if self.selected_unit.attack_range[0] > 1:
+                self.selected_unit.attacked = True
+                return False
+            # 如果有攻击后可以移动的单位，在调用此函数时attacked可能为True，此时移动后不能再攻击
+            if self.selected_unit.attacked == True:
+                return False
+            else:  # 不能攻击了
+                self._calculate_possible_moves(True, True)
+            # 搜索从当前位置是否有可以攻击的目标
             for pair in self.possible_attacks:
                 if pair[0] == (x, y):
-                    if self.selected_unit.attack_range[0] > 1:
-                        self.selected_unit.attacked = True # 远程兵种（最大范围大于1）移动后不能攻击
                     return True
-            self.selected_unit.attacked = True # 如果移动后无法攻击，直接把attacked设置为True，表示无法选中
+            # 如果当前位置没有攻击目标，直接把 attacked 置为True，表示本回合无法操作
+            self.selected_unit.attacked = True
+            return False
         return False
 
-    def _can_attack(self, source, target, skip_dist=None):
+    def _can_attack(self, source, target, skip_dist=False, source_moved_position=None):
+        """
+        source的坐标是移动前的坐标
+        skip_dist: 在calculate_possible_moves()中已经提前进行了距离检查，使用这个参数跳过距离检查
+        source_moved_position: 在calculate_possible_moves()中考虑移动后的攻击时，假设的移动位置
+        """
+        if not source_moved_position:
+            source_moved_position = (source.x, source.y)
         # 计算距离
         if not skip_dist:
             manhattan_dist = abs(source.x - target.x) + abs(source.y - target.y)
@@ -231,14 +264,15 @@ class GameManager:
         if isinstance(target, Build):
             if target.build_stacked:  # 不能攻击被堆叠的建筑
                 return False
-            elif source.move_type == MoveType.Feet:  #占领建筑时不能移动
+            elif source.move_type == MoveType.Feet:  #占领建筑之前不能移动
                 if abs(source.x - target.x) + abs(source.y - target.y) > 1:
                     return False
         # 如果是单位
         else:
             # 陆地单位在水上不能攻击
             if source.move_type < 3:
-                if self.map.terrain[source.y][source.x] == Terrain.WATER:
+                # 注意terrain的索引顺序
+                if self.map.terrain[source_moved_position[1]][source_moved_position[0]] == Terrain.WATER:
                     return False
             # 防空
             if target.move_type == MoveType.Air and not hasattr(source, 'anti_air'):
@@ -248,7 +282,7 @@ class GameManager:
                 return False
         return True
 
-    def unit_death(self, target: Unit):
+    def _unit_die(self, target: Unit):
         self.effects.append(Effect(target.x, target.y, EffectType.Death))
         if target.player_id == -1:
             self.neutral_player.builds.remove(target)
@@ -258,15 +292,19 @@ class GameManager:
             self.players[target.player_id].units.remove(target)
 
     def attack(self, x, y):
-        """根据坐标判断能否攻击，如果可以就执行"""
+        """
+        - 检查发起者是否在可以打到目标的位置
+        - 检查占领等特殊交互
+        - 执行攻击，然后考虑反击
+        return: 单位是否可以继续操作（即是否要求保持选中状态）
+        """
         for pair in self.possible_attacks:
-            # 移动和攻击分两步，不支持一步到位
+            # 移动和攻击分两步点击，不支持一步到位
             if pair[1] == (x, y) and pair[0] == (self.selected_unit.x, self.selected_unit.y):
 
-                play_sound(f"assets/sound/effect/attack_{random.randint(0, 2)}.mp3")
+                play_sound(f"assets/sound/effect/attack_{random.randint(0, 2)}.mp3")  # 播放攻击音效
 
                 source: Unit = self.selected_unit
-                source.moved = True # 攻击后不能再移动
                 source.attacked = True
                 target: Unit = pair[2]
                 # 占领
@@ -281,18 +319,25 @@ class GameManager:
                         self.players[source.player_id].builds.append(target)
                         self.neutral_player.builds.remove(target)
                         target.player_id = source.player_id
-                    return True
-                damage = self.calculate_damage(source, target)
+                    return False
+                damage = self._calculate_damage(source, target)
                 target.health -= damage
                 if target.health <= 0:
-                    self.unit_death(target)
+                    self._unit_die(target)
                 else: # 反击
                     if self._can_attack(target, source):
-                        damage = self.calculate_damage(target, source)
+                        damage = self._calculate_damage(target, source)
                         source.health -= damage
                         if source.health <= 0:
-                            self.unit_death(target)
-                return True
+                            self._unit_die(target)
+                if hasattr(source, 'blitz'):
+                    # 如果具有blitz特性，攻击后恢复可移动状态，但移动点数为1
+                    source.moved = False
+                    self._calculate_possible_moves(False, True, 1)
+                    return True
+                else:
+                    source.moved = True  # 攻击后不能再移动
+                    return False
         return False
 
     def check_game_over(self):
@@ -313,7 +358,7 @@ class GameManager:
         self.possible_moves = set()
         self.possible_attacks = []
 
-    def calculate_damage(self, source: Unit, target: Unit):
+    def _calculate_damage(self, source: Unit, target: Unit):
         health_percentage = math.ceil(source.health / source.max_health * 10) / 10
         luck = random.randint(0, 9) # 幸运系数
         terrain_factor = 1-Terrain.PROPERTIES[self.map.terrain[target.y][target.x]]['defence_factor']
@@ -324,26 +369,26 @@ class GameManager:
             armor_factor = 1 + 0.15 * weapon_diff # 弱打强衰减系数
         global_factor = 1.0 if source.attack_range[0] > 1 else 1.1 # 全局系数，远程近程区别对待
         if not isinstance(target, Build):
-        # 飞机打非空中的防空单位衰减伤害
+            # 飞机打非空中的防空单位衰减伤害
             if source.move_type == MoveType.Air and target.move_type != MoveType.Air and hasattr(target, 'anti_air'):
                 global_factor *= 0.8
             # 非海军单位打海军单位衰减伤害
-            if source.move_type != MoveType.Sea and target.move_type == MoveType.Sea:
-                global_factor *= 0.8
+            if source.move_type < 3 and target.move_type == MoveType.Sea:
+                global_factor *= 0.1
         return health_percentage * (source.attack + luck) * (terrain_factor * armor_factor) * global_factor
 
 
-    """
-    搜索所有可能的移动和攻击位置
-    """
-    def calculate_possible_moves(self, skip_move=False, attack_without_move=False):
-        # self.possible_moves 里是所有可到达的点（不含起点）
-        # self.possible_attacks 里是列表，元素是 ((from_x,from_y), (to_x,to_y), target_unit) 的元组
-        self.possible_moves = set()
-        self.possible_attacks = []
+    def _calculate_possible_moves(self, skip_move=False, attack_without_move=False, override_movement=None):
+        """
+        搜索所有可能的移动和攻击位置
+        skip_move: 不搜索移动（适用于已经移动的单位或者右键预览攻击范围，只考虑原地攻击）
+        attack_without_move: 只搜索原地攻击（适用于移动后不能攻击的单位，考虑移动和原地攻击）
+        """
+        self.possible_moves = set()  # 所有可到达的点（不含起点）
+        self.possible_attacks = []  # 元素是 ((from_x,from_y), (to_x,to_y), target_unit) 的元组
 
         unit = self.selected_unit
-        movement = unit.movement
+        movement = override_movement if override_movement else unit.movement
         attack_range = unit.attack_range
 
         # 1. Dijkstra 搜索最佳路径
@@ -414,16 +459,51 @@ class GameManager:
                         if i == unit.player_id:
                             continue
                         for enemy in (player.units+player.builds):  # 优先选择单位作为目标
-                            if (enemy.x, enemy.y) == (tx, ty) and self._can_attack(unit, enemy, True):
+                            if (enemy.x, enemy.y) == (tx, ty) and self._can_attack(unit, enemy, True, (mx, my)):
                                 # 记录格式：((移动点x, 移动点y), (目标点x, 目标点y), 目标单位)
                                 pair = ((mx, my), (tx, ty), enemy)
                                 if pair not in self.possible_attacks:
                                     self.possible_attacks.append(pair)
                                 break
-                    # [END] for i, player
-                # [END] for dy
-            # [END] for dx
-        # [END] for mx, my
+
+    def get_warning_list(self, coords):
+        """
+        获取所有可能攻击到指定单位的敌方单位列表
+        返回格式: [(x, y), ...] 表示可能攻击到该单位的敌方单位坐标列表
+        """
+        warning_list = []
+        # 暂存当前选择状态
+        original_selected: Unit = self.selected_unit
+        original_position = original_selected.x, original_selected.y
+        original_moves = self.possible_moves.copy()
+        original_attacks = self.possible_attacks.copy()
+        original_selected.x, original_selected.y = coords
+        # 取消当前选择
+        self.deselect()
+        # 遍历所有敌方玩家
+        for player in self.players + [self.neutral_player]:
+            if player.id == original_selected.player_id:
+                continue  # 跳过自己的单位  
+            # 检查敌方所有单位
+            for enemy in player.units + player.builds:
+                if enemy.attack_range[1] < 1:
+                    continue  # 跳过无法攻击的单位
+                # 直接设置选中的单位
+                self.selected_unit = enemy
+                # 计算可能的攻击范围
+                self._calculate_possible_moves(False, enemy.attack_range[0] > 1)
+                # 检查是否可以攻击到目标单位
+                for attack in self.possible_attacks:
+                    if attack[1] == (original_selected.x, original_selected.y):
+                        warning_list.append((enemy.x, enemy.y))
+                        break
+        # 恢复原始状态
+        original_selected.x, original_selected.y = original_position
+        self.selected_unit = original_selected
+        self.possible_moves = original_moves
+        self.possible_attacks = original_attacks
+        return warning_list
+
 
 
 class Effect:

@@ -7,6 +7,8 @@ import ctypes
 import sys
 import os
 
+# region Initialization ------------------------------------------------  Initialization ------------------
+
 pygame.init()
 
 # 创建无边框全屏窗口
@@ -50,8 +52,11 @@ shop_open_delay_counter = 0
 start_x = (window_width - SCREEN_WIDTH) // 2
 start_y = (window_height - SCREEN_HEIGHT) // 2
 winners = None
-right_click_view_counter = 0
+
+# 右键预览
+right_click_view_bool = False
 right_click_view_coordinates = None
+right_click_remove_counter = 0
 
 # 鼠标拖动
 is_dragging = False
@@ -110,8 +115,12 @@ def selected_is_shop():
     return selected and isinstance(selected, Build) \
         and selected.player_id == gm.cur_player_id and selected.shop_type!=0
 
-def left_click_select_unit(grid_x, grid_y):
-    """处理左键选择，检查是否打开交互（如商店）"""
+def select_and_interact(grid_x, grid_y):
+    """
+    - 调用GameManager的select_unit方法尝试选择单位
+    - 如果成功,检查是否打开交互（如商店）
+    - 返回选择是否成功
+    """
     global shop, shop_open_delay_counter, info_string
     if gm.select_unit(grid_x, grid_y):
         if selected_is_shop():
@@ -233,22 +242,20 @@ class Frame_Timer:
         else:
             Frame_Timer.cur -= 1
 
-"""
-------------  游戏主循环  -----------------------------------------------------------------------  游戏主循环  ------------------------
-"""
-
 try:
     gm = GameManager.load()
     show_hint(HINTS.LOAD)
 except:
     gm = GameManager()
 
+# endregion Initialization
+
+# region Main Loop ------------------------------------------------------  MainLoop ------------------
 while True:
     # 播放背景音乐
     play_bgm()
-    """
-    ------------  Handling Events  ---------------------------------------  Handling Events  ------------
-    """
+    
+    # region Handling Events -------------------------------------------  Handling Events ----------------
     for event in pygame.event.get():
         if event.type == QUIT:
             quit_game()
@@ -295,44 +302,42 @@ while True:
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_x, mouse_y = pygame.mouse.get_pos()
                 grid_x, grid_y = (mouse_x - start_x - SCREEN_MARGIN) // TILE_SIZE, (mouse_y - start_y - SCREEN_MARGIN) // TILE_SIZE
+                # 如果在地图显示范围内
                 if 0 <= grid_x < MAP_VIEW_SIZE and 0 <= grid_y < MAP_VIEW_SIZE:
                     grid_x += gm.map_x
                     grid_y += gm.map_y
-                # 检查是否在地图范围内
-                    # 处理地图范围内的左键
+                    # 左键
                     if event.button == 1:
                         selected = gm.selected_unit
-                        # 如果有选中单位，尝试移动和攻击
+                        # 选择了我方单位
                         if selected and selected.player_id == gm.cur_player_id:
                             res1, res2 = False, False
                             # 尝试移动
                             if not selected.moved and selected.movement > 0:
                                 res1 = gm.move_selected_unit(grid_x, grid_y)
-                                gm.calculate_possible_moves(True)
                             # 尝试攻击
                             if not selected.attacked and selected.attack_range[1] > 0:
                                 res2 = gm.attack(grid_x, grid_y)
-                                if res2:
+                                if gm.selected_unit.attacked:
                                     winners = gm.check_game_over()
                                     if winners:
                                         cur_state = GameState.GAME_OVER
-                            # 根据尝试结果管理选择状态
-                            if not res1:  # 如果移动失败，不管攻击成不成功，都取消选择
-                                if grid_x != gm.selected_unit.x or grid_y != gm.selected_unit.y:
-                                    gm.deselect()
-                                    if not res2:  # 如果移动和攻击都不成功，且点击了不同的位置，则尝试选择
-                                        left_click_select_unit(grid_x, grid_y)
-                                else:  # 如果点击了相同的单位，不尝试选择（希望取消选择）
-                                    gm.deselect()
+                            # 如果两个函数都没有要求保持选中状态，就取消选择
+                            if not res1 and not res2:
+                                gm.deselect()
+                                # 如果攻击失败，并且点击了不同的地块，尝试选择新的单位（支持连点选择）
+                                if not selected.attacked and (grid_x != selected.x or grid_y != selected.y):  
+                                    select_and_interact(grid_x, grid_y)
                         # 选择了敌方单位
                         elif gm.selected_unit:
+                            # 如果点击了不同的地块，尝试选择新的单位（支持连点选择）
                             if grid_x != gm.selected_unit.x or grid_y != gm.selected_unit.y:
                                 gm.deselect()
-                                left_click_select_unit(grid_x, grid_y)
-                            else:
-                                gm.deselect()
-                        # 没有选中单位，尝试选择单位；如果无法选择单位，进行拖动
-                        elif not left_click_select_unit(grid_x, grid_y):
+                                select_and_interact(grid_x, grid_y)
+                            # 如果再次点击相同的单位，取消选择
+                            else: gm.deselect()
+                        # 没有选中单位
+                        elif not select_and_interact(grid_x, grid_y):  # 如果选择失败，尝试拖动地图（点击空地拖动地图）
                             is_dragging = True
                             drag_start_pos = (mouse_x, mouse_y)
                             drag_start_map_pos = (gm.map_x, gm.map_y)
@@ -341,12 +346,14 @@ while True:
                         # 显示原地的可能攻击位置
                         gm.select_unit(grid_x, grid_y, True)
                         right_click_view_coordinates = (grid_x, grid_y)
-                        right_click_view_counter = RIGHT_CLICK_VIEW_COUNTER_DEF
+                        right_click_view_bool = True
                 if event.button == 2:
                     gm.next_turn()
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
                     is_dragging = False
+                elif event.button == 3:
+                    right_click_remove_counter = RIGHT_VIEW_REMOVE_COUNTER_DEF
             elif event.type == pygame.MOUSEMOTION:
                 if is_dragging:
                     mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -360,6 +367,14 @@ while True:
                         gm.map_x = max(0, min(gm.map.width - MAP_VIEW_SIZE, new_map_x))
                     if gm.map.height > MAP_VIEW_SIZE:
                         gm.map_y = max(0, min(gm.map.height - MAP_VIEW_SIZE, new_map_y))
+                elif right_click_view_bool:
+                    mouse_x, mouse_y = pygame.mouse.get_pos()
+                    grid_x, grid_y = (mouse_x - start_x - SCREEN_MARGIN) // TILE_SIZE, (mouse_y - start_y - SCREEN_MARGIN) // TILE_SIZE
+                    # 如果在地图显示范围内
+                    if 0 <= grid_x < MAP_VIEW_SIZE and 0 <= grid_y < MAP_VIEW_SIZE:
+                        grid_x += gm.map_x
+                        grid_y += gm.map_y
+                        right_click_view_coordinates = (grid_x, grid_y)
         elif cur_state == GameState.GAME_OVER:
             if event.type == KEYDOWN or event.type == MOUSEBUTTONDOWN:
                 cur_state = GameState.PLAYING
@@ -395,9 +410,10 @@ while True:
                     info_string[1] = SHOP_DEFAULT_STRING[1]
                 shop_last_ope_item = item
 
-    """
-    ------------  Rendering  ----------------------------------------------------------  Rendering  ------------
-    """
+    # endregion Handling Events
+
+    # region Rendering -------------------------------------------------  Rendering ----------------
+
     if cur_state == GameState.MENU:
         cover_img = pygame.image.load("assets/cover.png")
         cover_img = pygame.transform.scale(cover_img, (SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -425,51 +441,75 @@ while True:
             selected = gm.selected_unit
             # 绘制可能的移动位置
             if not selected.moved or selected.player_id != gm.cur_player_id:
-                if selected.movement > 0:
+                if selected.movement and not right_click_view_bool:
                     for (x, y) in gm.possible_moves:
                         x-= gm.map_x
                         y-= gm.map_y
                         if x<0 or x>=MAP_VIEW_SIZE or y<0 or y>=MAP_VIEW_SIZE:
                             continue
-                        move_rect = pygame.Rect(x * TILE_SIZE + SCREEN_MARGIN, y * TILE_SIZE + SCREEN_MARGIN, TILE_SIZE, TILE_SIZE)
-                        pygame.draw.rect(game_surface, (100, 255, 100), move_rect, 2)
-            # 绘制攻击范围（right_click)
-            if right_click_view_counter > 0:
-                if selected.attack_range[1] > 0:
+                        move_rect = draw_select_tile_rect(x, y, 4)
+                        pygame.draw.rect(game_surface, GREEN, move_rect, 4)
+            # 绘制右键预览攻击范围
+            if right_click_view_bool:
+                if selected.attack_range[1] > 0: 
+                    x0 = right_click_view_coordinates[0] - gm.map_x
+                    y0 = right_click_view_coordinates[1] - gm.map_y
+                    # 绘制原点
+                    if right_click_view_coordinates in gm.possible_moves:
+                        pygame.draw.circle(game_surface, GREEN, 
+                        (x0*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2, y0*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2), 3)
+                    else:
+                        pygame.draw.circle(game_surface, GREY,
+                        (x0*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2, y0*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2), 3)
+                    # 绘制敌人攻击范围预警
+                    warn_list = gm.get_warning_list(right_click_view_coordinates)
+                    warn_list = [(a-gm.map_x, b-gm.map_y) for a, b in warn_list]
+                    for pair in warn_list:
+                        if 0 <= pair[0] < MAP_VIEW_SIZE and 0 <= pair[1] < MAP_VIEW_SIZE:
+                            # 绘制感叹号
+                            center_x = pair[0]*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2
+                            center_y = pair[1]*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2
+                            # 绘制圆点（感叹号底部）
+                            pygame.draw.circle(game_surface, RED, (center_x, center_y+5), 2)
+                            # 绘制线段（感叹号上部）
+                            pygame.draw.line(game_surface, RED, (center_x, center_y-8), (center_x, center_y), 3)
                     for dy in range(-gm.selected_unit.attack_range[1], gm.selected_unit.attack_range[1] + 1):
                         for dx in range(-gm.selected_unit.attack_range[1], gm.selected_unit.attack_range[1] + 1):
                             manhattan_distance = abs(dx) + abs(dy)
                             if manhattan_distance < gm.selected_unit.attack_range[0] or manhattan_distance > gm.selected_unit.attack_range[1]:
                                 continue
-                            x = right_click_view_coordinates[0] + dx - gm.map_x
-                            y = right_click_view_coordinates[1] + dy - gm.map_y
-                            if x < 0 or x >= MAP_VIEW_SIZE or y < 0 or y >= MAP_VIEW_SIZE:
+                            x = x0 + dx
+                            y = y0 + dy
+                            if x < 0 or x >= MAP_VIEW_SIZE or y < 0 or y >= MAP_VIEW_SIZE or (x, y) in warn_list:
                                 continue
-                            attack_rect = pygame.Rect(x * TILE_SIZE + SCREEN_MARGIN, y * TILE_SIZE + SCREEN_MARGIN, TILE_SIZE, TILE_SIZE)
-                            # pygame.draw.rect(game_surface, (255, 192, 192), attack_rect, 1)
-                            pygame.draw.circle(game_surface, PINK, (attack_rect.centerx, attack_rect.centery), 2)
+                            pygame.draw.circle(game_surface, RED, (x*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2, y*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2), 3)
+                        
             # 绘制可能的攻击位置
             if not gm.selected_unit.attacked or gm.selected_unit.player_id != gm.cur_player_id:
                 if selected.attack_range[1] > 0:
+                    drawn = set() # 优先绘制当前位置可以攻击的目标
                     for pair in gm.possible_attacks:
                         x, y = pair[1]
                         x -= gm.map_x
                         y -= gm.map_y
                         if x < 0 or x >= MAP_VIEW_SIZE or y < 0 or y >= MAP_VIEW_SIZE:
                             continue
-                        attack_rect = pygame.Rect(
-                            x * TILE_SIZE + SCREEN_MARGIN, y * TILE_SIZE + SCREEN_MARGIN, TILE_SIZE, TILE_SIZE)
-                        pygame.draw.rect(game_surface, PINK, attack_rect, 2)
+                        attack_rect = draw_select_tile_rect(x, y, 2)
+                        if pair[1] in drawn:
+                            continue
+                        if not right_click_view_bool and pair[0] == (gm.selected_unit.x, gm.selected_unit.y) or \
+                            right_click_view_bool and pair[0] == right_click_view_coordinates:
+                            pygame.draw.rect(game_surface, PINK, attack_rect, 4)
+                            drawn.add(pair[1]) # 优先级
+                        else:
+                            pygame.draw.rect(game_surface, LIGHT_PINK, attack_rect, 4)
+                            
             # 绘制选中单位边框
             x = gm.selected_unit.x - gm.map_x
             y = gm.selected_unit.y - gm.map_y
             if 0 <= x < MAP_VIEW_SIZE and 0 <= y < MAP_VIEW_SIZE:
-                select_rect = pygame.Rect(
-                    x * TILE_SIZE + SCREEN_MARGIN, 
-                    y * TILE_SIZE + SCREEN_MARGIN, 
-                    TILE_SIZE, TILE_SIZE
-                )
-                if right_click_view_counter > 0:
+                select_rect = draw_select_tile_rect(x, y, 0)
+                if right_click_view_bool:
                     pygame.draw.rect(game_surface, WHITE, select_rect, 1)
                 else:
                     pygame.draw.rect(game_surface, YELLOW, select_rect, 3)
@@ -559,12 +599,16 @@ while True:
     # 将游戏画面绘制到全屏中心
     screen.blit(game_surface, (start_x, start_y))
 
+    # endregion Rendering
+
     # Counters
-    if right_click_view_counter > 0:
-        right_click_view_counter -= 1
-        # 如果在当前单位上
-        if right_click_view_counter == 0 and gm.selected_unit and gm.selected_unit.player_id != gm.cur_player_id:
-            gm.deselect()
+    if right_click_remove_counter > 0:
+        right_click_remove_counter -= 1
+        if right_click_remove_counter == 0:
+            right_click_view_bool = False
+            right_click_view_coordinates = None
+            if gm.selected_unit and gm.selected_unit.player_id != gm.cur_player_id:
+                gm.deselect()
     if hint_counter > 0:
         hint_counter -= 1
         if hint_counter == 0 and info_string[0] in HINTS.__dict__.values():
@@ -583,3 +627,5 @@ while True:
 
     pygame.display.flip()
     frameclock.tick(FPS)
+
+# endregion Main Loop
