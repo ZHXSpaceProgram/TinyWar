@@ -216,7 +216,7 @@ class Build(Unit):
         self.y = y
         self.type = type
         self.player_id = player_id
-        self.moved = False
+        self.moved = True
         self.attacked = False
         self.movement = 0 # 禁用移动
         self.attack_range = (0, 0) # 禁用攻击

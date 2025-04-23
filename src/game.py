@@ -104,20 +104,6 @@ class Player:
                 build.attacked = True
             else:
                 build.attacked = False
-    
-    def buy_item(self, item, x, y) -> bool:
-        """
-        检查钱够不够
-        """
-        if item in Unit.PROPERTIES.keys():
-            if self.money < Unit.PROPERTIES[item]['price']:
-                return False
-            self.add_unit(x, y, item, True)
-            self.money -= Unit.PROPERTIES[item]['price']
-            return True
-        else:  # 选择了不存在的单位
-            print(f"{item} not found in shop.")
-            return False
 
 
 class GameManager:
@@ -137,6 +123,7 @@ class GameManager:
             if i != self.cur_player_id:
                 player.reset_units(True)
         self.effects = []
+        self.ai_enabled = False
 
     def _init_view(self):
         # 初始化地图位置（大地图左侧，小地图居中）
@@ -504,6 +491,20 @@ class GameManager:
         self.possible_attacks = original_attacks
         return warning_list
 
+    def buy_item(self, item, x, y) -> bool:
+        """
+        检查当前玩家的钱够不够购买物品
+        """
+        player = self.cur_player()
+        if item in Unit.PROPERTIES.keys():
+            if player.money < Unit.PROPERTIES[item]['price']:
+                return False
+            player.add_unit(x, y, item, True)
+            player.money -= Unit.PROPERTIES[item]['price']
+            return True
+        else:  # 选择了不存在的单位
+            print(f"{item} not found in shop.")
+            return False
 
 
 class Effect:
@@ -565,7 +566,7 @@ class Shop:
             else:
                 text1 = font.render(capital_words(item), True, WHITE)
             rect = pygame.Rect(
-                SHOP_X_MARGIN + i // 15 * 250,
+                SHOP_X_MARGIN + i // 15 * (200+SHOP_X_SPACE),
                 SHOP_Y_MARGIN + i % 15 * SHOP_LINE_H,
                 SHOP_LINE_W, SHOP_LINE_H
             )

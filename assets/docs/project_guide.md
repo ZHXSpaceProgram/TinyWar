@@ -48,8 +48,8 @@
     - `main.select_and_interact()` is called in handling events.
     - `main.select_and_interact()` calls `GameManager.select_unit()` to try selecting a unit.
     - `select_unit()` checks if there are any units or builds in the cell under the mouse.
-    - `select_unit()` calls `GameManager.calculate_possible_moves()` to calculate possible move and attack positions, which are recorded in `GameManager.possible_moves` and `GameManager.possible_attacks`.
-    - `calculate_possible_moves()` calls `GameManager._can_attack()` to check if the source can attack the target based on the units' properties.
+    - `select_unit()` calls `GameManager._calculate_possible_moves()` to calculate possible move and attack positions, which are recorded in `GameManager.possible_moves` and `GameManager.possible_attacks`.
+    - `_calculate_possible_moves()` calls `GameManager._can_attack()` to check if the source can attack the target based on the units' properties.
     - If `select_unit()` succeeded, `select_and_interact()` checks if the selected unit is interactable.
 
 - **Move**

@@ -146,21 +146,25 @@ def quit_game():
 
 class Typing:
     """abstrct class, no instance"""
-    typed_string = None # None 表示未处于输入状态
+    typed_string = None # None 表示未处于输入状态，空字符串表示刚开始输入
     cur_state: str = None # 目前在输入的字段
     StateDict = {
         'level': {
-            'info_string': ['Please type the number of map:', f"{', '.join(sorted(available_levels))}"],
+            'info_string': ('Please type the number of map:', f"{', '.join(sorted(available_levels))}"),
             'enter_func': lambda: Typing._typing_level_enter_func()
-        },
+        }, 
+        'ai': {
+            'info_string': ('Do you want to play with AI?', '[Y/N]'),
+            'enter_func': lambda: Typing._typing_ai_enter_func()
+        }
     }
 
     def is_typing():
-        return Typing.typed_string!= None
+        return Typing.typed_string != None
 
     def enter_typing(state):
         global info_string
-        info_string = Typing.StateDict[state]['info_string']
+        info_string = list(Typing.StateDict[state]['info_string'])
         Typing.cur_state = state
         Typing.typed_string = ''
 
@@ -171,16 +175,15 @@ class Typing:
         Typing.cur_state = None
     def handle_event(event):
         global info_string
-        # 数字
         if event.type == KEYDOWN:
-            # 输入数字
-            if event.unicode.isdigit():
+            # 输入字符
+            if event.unicode.isalnum() or event.unicode in '_':
                 if Typing.typed_string:
                     Typing.typed_string += event.unicode
                 else:
                     Typing.typed_string = event.unicode
-                info_string[0] = Typing.typed_string + '  '*(8-len(Typing.typed_string)) + \
-                    '([Enter] to confirm, [Backspace|MMB] to exit)'
+                info_string[0] = Typing.typed_string + '  '*(7-len(Typing.typed_string)) + \
+                    ' ([Enter] to confirm, [Backspace|Right Click] to exit)'
             # 退格键退出
             elif event.key == K_BACKSPACE:
                 Typing.exit_typing()
@@ -197,50 +200,28 @@ class Typing:
         if Typing.typed_string in available_levels:
             try:
                 gm = GameManager(Typing.typed_string)
-                show_hint(HINTS.LOAD)
+                # show_hint(HINTS.LOAD)
+                Typing.enter_typing('ai')
             except Exception as e:
                 print(f"Error loading level: {e}")
                 show_hint(HINTS.FILE_ERROR)
-            finally:
                 Typing.typed_string = None
         else:
             show_hint(HINTS.INVALID_LEVEL)
             Typing.typed_string = None
-
-class Frame_Timer:
-    """
-    用于调试的计时器
-    单位是毫秒
-    """
-    CNT = 20 # [SET] 多少帧打印一次
-    AVG = 200 # [SET] 最多多少帧计算平均值
-    dict = {}
-    cur = CNT
-    __start_time = None
-    def start_timer():
-        Frame_Timer.__start_time = pygame.time.get_ticks()  # 获取当前时间戳（毫秒）
-    def end_timer(timer_name='default'):
-        if timer_name not in Frame_Timer.dict:
-            Frame_Timer.dict[timer_name] = []
-        end_time = pygame.time.get_ticks()  # 获取当前时间戳（毫秒）
-        list = Frame_Timer.dict[timer_name]
-        list.append(end_time - Frame_Timer.__start_time)
-        if len(list) > Frame_Timer.AVG:
-            Frame_Timer.dict[timer_name].pop(0)
-    def print():
-        if Frame_Timer.cur == 0:
-            Frame_Timer.cur = Frame_Timer.CNT
-            # 显示实际帧率
-            print('\n\n')
-            fps = frameclock.get_fps()
-            print(f"FPS: {round(fps)}")
-            # 打印列表平均值
-            for name in Frame_Timer.dict:
-                list = Frame_Timer.dict[name]
-                if len(list) > 0:
-                    print(f"{name}: {sum(list)/len(list):.1f}   ({len(list)})")
+    
+    def _typing_ai_enter_func():
+        global gm
+        if Typing.typed_string.lower() == 'y':
+            gm.ai_enabled = True
+            show_hint(HINTS.LOAD)
+            Typing.typed_string = None
+        elif Typing.typed_string.lower() == 'n':
+            show_hint(HINTS.LOAD)
+            Typing.typed_string = None
         else:
-            Frame_Timer.cur -= 1
+            show_hint(HINTS.INVALID_YN)
+            Typing.typed_string = None
 
 try:
     gm = GameManager.load()
@@ -384,7 +365,7 @@ while True:
                 if event.button == 1:
                     item = shop.get_item(event.pos[0]-start_x, event.pos[1]-start_y)
                     if item:
-                        res = gm.players[gm.cur_player_id].buy_item(item, shop.x, shop.y)
+                        res = gm.buy_item(item, shop.x, shop.y)
                         shop.build.attacked = True
                         if res:
                             shop = None

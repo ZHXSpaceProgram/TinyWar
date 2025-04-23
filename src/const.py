@@ -26,7 +26,8 @@ LIGHT_PINK = (255, 182, 192)
 SHOP_MARGIN = 50
 SHOP_LINE_H = min((SCREEN_HEIGHT - 2 * SHOP_MARGIN ) // 150 * 10, 45)
 SHOP_LINE_W = 200
-SHOP_X_MARGIN  = (SCREEN_WIDTH - 700) // 2
+SHOP_X_SPACE = 50
+SHOP_X_MARGIN  = (SCREEN_WIDTH - 600 -2*SHOP_X_SPACE) // 2
 SHOP_Y_MARGIN = max((SCREEN_HEIGHT - 15 * SHOP_LINE_H) // 2 - 30, SHOP_MARGIN)
 SHOP_IMG_X, SHOP_IMG_Y = SCREEN_WIDTH - SHOP_MARGIN - TILE_SIZE, SCREEN_HEIGHT - TILE_SIZE - 36
 MONEY_Y = SCREEN_HEIGHT - TILE_SIZE // 2 - 42
@@ -41,10 +42,13 @@ SHOP_OPEN_DELAY_COUNTER_DEF = 5
 # example: `info_string = list(DEFAULT_INFO_STRING)`
 DEFAULT_INFO_STRING = ('Welcome to TinyWar!', 'Press [H] for help.')
 
-HELP_STRING = ['[WSAD|Mouse Drag] Move Map  [Space|Middle Click] Next Turn  [Right Click] View Attack Range',
-               '[F5] Save  [F9] Load  [F1] New Game  [Esc] Quit  [H] Next Page',
-                '1', 
-                '2' ]
+HELP_STRING = ['[WSAD|Mouse Drag] Move Map  [Space|Middle Click] Next Turn',
+               '[F1] New Game  [F5] Save  [F9] Load  [Esc] Quit  [H] Next Page',
+                'Tip 1: Select a unit and right-drag the mouse to preview attack ranges for both the selected', ## max length
+                'unit (red dots) and enemy units (exclamation marks).' ,
+                'Tip 2: ',
+                'wewe'
+                ]
 
 SHOP_DEFAULT_STRING = ('{type}',
                        '[Left Click] Buy  [Right Click] Exit'
@@ -52,6 +56,7 @@ SHOP_DEFAULT_STRING = ('{type}',
 
 class HINTS:
     INVALID_LEVEL = 'Invalid level number.'
+    INVALID_YN = 'Please enter Y or N.'
     NO_FILE = 'Game save not found.'
     FILE_ERROR = 'Level file error.'
     SAVE = 'Game Saved'
@@ -187,6 +192,41 @@ class Terrain:
             'move_cost_5': 3,
         }
     }
+
+class Frame_Timer:
+    """
+    用于调试的计时器
+    单位是毫秒
+    """
+    CNT = 20 # [SET] 多少帧打印一次
+    AVG = 200 # [SET] 最多多少帧计算平均值
+    dict = {}
+    cur = CNT
+    __start_time = None
+    def start_timer():
+        Frame_Timer.__start_time = pygame.time.get_ticks()  # 获取当前时间戳（毫秒）
+    def end_timer(timer_name='default'):
+        if timer_name not in Frame_Timer.dict:
+            Frame_Timer.dict[timer_name] = []
+        end_time = pygame.time.get_ticks()  # 获取当前时间戳（毫秒）
+        list = Frame_Timer.dict[timer_name]
+        list.append(end_time - Frame_Timer.__start_time)
+        if len(list) > Frame_Timer.AVG:
+            Frame_Timer.dict[timer_name].pop(0)
+    def print():
+        if Frame_Timer.cur == 0:
+            Frame_Timer.cur = Frame_Timer.CNT
+            # 显示实际帧率
+            print('\n\n')
+            fps = frameclock.get_fps()
+            print(f"FPS: {round(fps)}")
+            # 打印列表平均值
+            for name in Frame_Timer.dict:
+                list = Frame_Timer.dict[name]
+                if len(list) > 0:
+                    print(f"{name}: {sum(list)/len(list):.1f}   ({len(list)})")
+        else:
+            Frame_Timer.cur -= 1
 
 # endregion Game
 
