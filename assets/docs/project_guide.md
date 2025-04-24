@@ -71,6 +71,16 @@
 ### Map
 
     - GameMap.terrain[y][x]: The first index is y, the second index is x
+
+### Units and Builds
+
+    - All the units and builds are stored to the below lists:
+        - gm.players[player_id].units
+        - gm.players[player_id].builds
+        - gm.neutral_player.builds
+    
+    - build.moved is set to True when added, and it should never be reset.
+
 ## Todo
 
 - Add a new state for selecting target area with mouse, for special skills or constructing buildings

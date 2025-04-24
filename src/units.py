@@ -218,6 +218,7 @@ class Build(Unit):
         self.player_id = player_id
         self.moved = True
         self.attacked = False
+        self.attack = 0
         self.movement = 0 # 禁用移动
         self.attack_range = (0, 0) # 禁用攻击
         self.health = self.max_health = 100
@@ -254,3 +255,10 @@ class Build(Unit):
 
     def draw(self, screen, map_x, map_y):
         super().draw(screen, map_x, map_y)
+
+shop_available_units = {
+    SHOP_TYPE.GROUND: [unit for unit in Unit.PROPERTIES if Unit.PROPERTIES[unit]['move_type'] < 3],
+    SHOP_TYPE.AIR: [unit for unit in Unit.PROPERTIES if Unit.PROPERTIES[unit]['move_type'] == MoveType.Air],
+    SHOP_TYPE.SEA: [unit for unit in Unit.PROPERTIES if Unit.PROPERTIES[unit]['move_type'] == MoveType.Sea or
+                                                        Unit.PROPERTIES[unit]['move_type'] == MoveType.Sub],
+}

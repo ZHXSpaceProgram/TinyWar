@@ -1,13 +1,13 @@
-1	1	commando	0
-1	2	tank	0
-1	3	mortar	0
-4	1	commando	1
-4	2	tank	1
-4	3	mortar	1
-2	2	factory	-1
+1	5	commando	0
+2	5	tank	0
+#1	3	mortar	0
+2	0	commando	1
+5	2	tank	1
+#4	3	mortar	1
+2	2	city	-1
 
 # air
 
-2	3	fighter	0
-4	4	fighter	1
-4	5	bomber	1
+#2	3	fighter	0
+#4	4	fighter	1
+#4	5	bomber	1

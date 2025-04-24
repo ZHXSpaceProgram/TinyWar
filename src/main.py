@@ -1,5 +1,6 @@
 from pygame.locals import *
 from random import randint
+from ai import GameAI
 from const import *
 from game import *
 import pygame
@@ -139,6 +140,136 @@ def quit_game():
         pygame.quit()
         sys.exit()
 
+# 提出函数用于AI执行过程中回调
+def render_playing_state(update=False):
+    game_surface.fill((20, 20, 20))
+    # 绘制地图
+    gm.map.draw(game_surface, gm.map_x, gm.map_y)
+    # 绘制单位
+    for player in gm.players:
+        for build in player.builds:
+            # 更新重叠状态
+            if build.stackable:
+                build.build_stacked = False
+                for unit in player.units:
+                    if unit.x == build.x and unit.y == build.y:
+                        build.build_stacked = True
+            build.draw(game_surface, gm.map_x, gm.map_y)
+        for unit in player.units:
+            unit.draw(game_surface, gm.map_x, gm.map_y)
+    for unit in gm.neutral_player.builds:
+        unit.draw(game_surface, gm.map_x, gm.map_y)
+    # 绘制和选择相关的内容
+    if gm.selected_unit:
+        selected = gm.selected_unit
+        # 绘制可能的移动位置
+        if not selected.moved or selected.player_id != gm.cur_player_id:
+            if selected.movement and not right_click_view_bool:
+                for (x, y) in gm.possible_moves:
+                    x-= gm.map_x
+                    y-= gm.map_y
+                    if x<0 or x>=MAP_VIEW_SIZE or y<0 or y>=MAP_VIEW_SIZE:
+                        continue
+                    move_rect = draw_select_tile_rect(x, y, 4)
+                    pygame.draw.rect(game_surface, GREEN, move_rect, 4)
+        # 绘制右键预览攻击范围
+        if right_click_view_bool:
+            if selected.attack_range[1] > 0: 
+                x0 = right_click_view_coordinates[0] - gm.map_x
+                y0 = right_click_view_coordinates[1] - gm.map_y
+                # 绘制原点
+                if right_click_view_coordinates in gm.possible_moves:
+                    pygame.draw.circle(game_surface, GREEN, 
+                    (x0*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2, y0*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2), 3)
+                else:
+                    pygame.draw.circle(game_surface, GREY,
+                    (x0*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2, y0*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2), 3)
+                # 绘制敌人攻击范围预警
+                warn_list = gm.get_warning_list(right_click_view_coordinates)
+                warn_list = [(a-gm.map_x, b-gm.map_y) for a, b in warn_list]
+                for pair in warn_list:
+                    if 0 <= pair[0] < MAP_VIEW_SIZE and 0 <= pair[1] < MAP_VIEW_SIZE:
+                        # 绘制感叹号
+                        center_x = pair[0]*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2
+                        center_y = pair[1]*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2
+                        # 绘制圆点（感叹号底部）
+                        pygame.draw.circle(game_surface, RED, (center_x, center_y+5), 2)
+                        # 绘制线段（感叹号上部）
+                        pygame.draw.line(game_surface, RED, (center_x, center_y-8), (center_x, center_y), 3)
+                for dy in range(-gm.selected_unit.attack_range[1], gm.selected_unit.attack_range[1] + 1):
+                    for dx in range(-gm.selected_unit.attack_range[1], gm.selected_unit.attack_range[1] + 1):
+                        manhattan_distance = abs(dx) + abs(dy)
+                        if manhattan_distance < gm.selected_unit.attack_range[0] or manhattan_distance > gm.selected_unit.attack_range[1]:
+                            continue
+                        x = x0 + dx
+                        y = y0 + dy
+                        if x < 0 or x >= MAP_VIEW_SIZE or y < 0 or y >= MAP_VIEW_SIZE or (x, y) in warn_list:
+                            continue
+                        pygame.draw.circle(game_surface, RED, (x*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2, y*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2), 3)       
+        # 绘制可能的攻击位置
+        if not gm.selected_unit.attacked or gm.selected_unit.player_id != gm.cur_player_id:
+            if selected.attack_range[1] > 0:
+                drawn = set() # 优先绘制当前位置可以攻击的目标
+                for pair in gm.possible_attacks:
+                    x, y = pair[1]
+                    x -= gm.map_x
+                    y -= gm.map_y
+                    if x < 0 or x >= MAP_VIEW_SIZE or y < 0 or y >= MAP_VIEW_SIZE:
+                        continue
+                    attack_rect = draw_select_tile_rect(x, y, 2)
+                    if pair[1] in drawn:
+                        continue
+                    if not right_click_view_bool and pair[0] == (gm.selected_unit.x, gm.selected_unit.y) or \
+                        right_click_view_bool and pair[0] == right_click_view_coordinates:
+                        pygame.draw.rect(game_surface, PINK, attack_rect, 4)
+                        drawn.add(pair[1]) # 优先级
+                    else:
+                        pygame.draw.rect(game_surface, LIGHT_PINK, attack_rect, 4)
+        # 绘制选中单位边框
+        x = gm.selected_unit.x - gm.map_x
+        y = gm.selected_unit.y - gm.map_y
+        if 0 <= x < MAP_VIEW_SIZE and 0 <= y < MAP_VIEW_SIZE:
+            select_rect = draw_select_tile_rect(x, y, 0)
+            if right_click_view_bool:
+                pygame.draw.rect(game_surface, WHITE, select_rect, 1)
+            else:
+                pygame.draw.rect(game_surface, YELLOW, select_rect, 3)
+    # 绘制特效
+    for effect in gm.effects:
+        if not effect.update():
+            gm.effects.remove(effect)
+        effect.draw(game_surface, gm.map_x, gm.map_y)
+
+    # 绘制UI信息
+    font = pygame.font.SysFont('Calibri', 20, True)
+    turn_text = font.render(f"Turn {gm.turn:<3} {gm.players[gm.cur_player_id].name:<4}", True, WHITE)
+    game_surface.blit(turn_text, (20, 18))
+
+    # 绘制多行文本, 在右边
+    multiline_string = [f'Map {gm.level:<4} AI {PlayerNameDict[gm.ai_id] if gm.ai_id else 'Off'}']
+    for player in gm.players:
+        multiline_string.append('')
+        multiline_string.append(f"— Player {player.name:<4} — <" if player.id == gm.cur_player_id else
+                                f"— Player {player.name:<4} —")
+        multiline_string.append(f"Money: {player.money}")
+    font = pygame.font.SysFont('Calibri', 20)
+    for i, line in enumerate(multiline_string):
+        text = font.render(line, True, WHITE)
+        game_surface.blit(text, (SCREEN_WIDTH - 250, SCREEN_MARGIN + i * 25))
+
+    # 底部info
+    if info_string[0] and info_string[0][-1]=='!':
+        font = pygame.font.SysFont('Calibri', 20, True)
+    info_text = [font.render(i, True, WHITE) for i in info_string]
+    game_surface.blit(info_text[0], (20, SCREEN_HEIGHT - 63))
+    game_surface.blit(info_text[1], (20, SCREEN_HEIGHT - 38))
+
+    if update:
+        # 将游戏画面绘制到全屏中心
+        screen.blit(game_surface, (start_x, start_y))
+        pygame.display.update()
+
+
 """
 -----------  Classes  -------------------------------------------------------  Classes  -----------------
 """
@@ -173,6 +304,7 @@ class Typing:
         info_string = list(DEFAULT_INFO_STRING)
         Typing.typed_string = None
         Typing.cur_state = None
+    
     def handle_event(event):
         global info_string
         if event.type == KEYDOWN:
@@ -211,9 +343,10 @@ class Typing:
             Typing.typed_string = None
     
     def _typing_ai_enter_func():
-        global gm
+        global gm, ai
         if Typing.typed_string.lower() == 'y':
-            gm.ai_enabled = True
+            gm.ai_id = AI_ID
+            ai = GameAI(gm, render_playing_state)
             show_hint(HINTS.LOAD)
             Typing.typed_string = None
         elif Typing.typed_string.lower() == 'n':
@@ -225,9 +358,17 @@ class Typing:
 
 try:
     gm = GameManager.load()
+    if gm.ai_id:
+        ai = GameAI(gm, render_playing_state)
     show_hint(HINTS.LOAD)
 except:
     gm = GameManager()
+    gm.ai_id = AI_ID
+    ai = GameAI(gm, render_playing_state)
+
+# game_surface边框
+border_rect = pygame.Rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
+pygame.draw.rect(game_surface, WHITE, border_rect, 1)
 
 # endregion Initialization
 
@@ -248,6 +389,12 @@ while True:
                 cur_state = GameState.PLAYING
                 pygame.time.delay(200)
         elif cur_state == GameState.PLAYING:
+            if gm.cur_player_id == gm.ai_id:
+                ai.play_turn()
+                pygame.event.clear()  # 清除事件列表
+                winners = gm.check_game_over()
+                if winners:
+                    cur_state = GameState.GAME_OVER
             # 如果处于输入关卡状态
             if Typing.is_typing():
                 Typing.handle_event(event)
@@ -274,6 +421,8 @@ while True:
                 elif event.key == K_F9:
                     try:
                         gm = GameManager.load()
+                        if gm.ai_id:
+                            ai = GameAI(gm, render_playing_state)
                         show_hint(HINTS.LOAD)
                     except FileNotFoundError:
                         print("Game save not found.")
@@ -400,129 +549,7 @@ while True:
         cover_img = pygame.transform.scale(cover_img, (SCREEN_WIDTH, SCREEN_HEIGHT))
         game_surface.blit(cover_img, (0, 0))
     elif cur_state == GameState.PLAYING:
-        game_surface.fill((20, 20, 20))
-        # 绘制地图
-        gm.map.draw(game_surface, gm.map_x, gm.map_y)
-        # 绘制单位
-        for player in gm.players:
-            for build in player.builds:
-                # 更新重叠状态
-                if build.stackable:
-                    build.build_stacked = False
-                    for unit in player.units:
-                        if unit.x == build.x and unit.y == build.y:
-                            build.build_stacked = True
-                build.draw(game_surface, gm.map_x, gm.map_y)
-            for unit in player.units:
-                unit.draw(game_surface, gm.map_x, gm.map_y)
-        for unit in gm.neutral_player.builds:
-            unit.draw(game_surface, gm.map_x, gm.map_y)
-        # 绘制和选择相关的内容
-        if gm.selected_unit:
-            selected = gm.selected_unit
-            # 绘制可能的移动位置
-            if not selected.moved or selected.player_id != gm.cur_player_id:
-                if selected.movement and not right_click_view_bool:
-                    for (x, y) in gm.possible_moves:
-                        x-= gm.map_x
-                        y-= gm.map_y
-                        if x<0 or x>=MAP_VIEW_SIZE or y<0 or y>=MAP_VIEW_SIZE:
-                            continue
-                        move_rect = draw_select_tile_rect(x, y, 4)
-                        pygame.draw.rect(game_surface, GREEN, move_rect, 4)
-            # 绘制右键预览攻击范围
-            if right_click_view_bool:
-                if selected.attack_range[1] > 0: 
-                    x0 = right_click_view_coordinates[0] - gm.map_x
-                    y0 = right_click_view_coordinates[1] - gm.map_y
-                    # 绘制原点
-                    if right_click_view_coordinates in gm.possible_moves:
-                        pygame.draw.circle(game_surface, GREEN, 
-                        (x0*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2, y0*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2), 3)
-                    else:
-                        pygame.draw.circle(game_surface, GREY,
-                        (x0*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2, y0*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2), 3)
-                    # 绘制敌人攻击范围预警
-                    warn_list = gm.get_warning_list(right_click_view_coordinates)
-                    warn_list = [(a-gm.map_x, b-gm.map_y) for a, b in warn_list]
-                    for pair in warn_list:
-                        if 0 <= pair[0] < MAP_VIEW_SIZE and 0 <= pair[1] < MAP_VIEW_SIZE:
-                            # 绘制感叹号
-                            center_x = pair[0]*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2
-                            center_y = pair[1]*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2
-                            # 绘制圆点（感叹号底部）
-                            pygame.draw.circle(game_surface, RED, (center_x, center_y+5), 2)
-                            # 绘制线段（感叹号上部）
-                            pygame.draw.line(game_surface, RED, (center_x, center_y-8), (center_x, center_y), 3)
-                    for dy in range(-gm.selected_unit.attack_range[1], gm.selected_unit.attack_range[1] + 1):
-                        for dx in range(-gm.selected_unit.attack_range[1], gm.selected_unit.attack_range[1] + 1):
-                            manhattan_distance = abs(dx) + abs(dy)
-                            if manhattan_distance < gm.selected_unit.attack_range[0] or manhattan_distance > gm.selected_unit.attack_range[1]:
-                                continue
-                            x = x0 + dx
-                            y = y0 + dy
-                            if x < 0 or x >= MAP_VIEW_SIZE or y < 0 or y >= MAP_VIEW_SIZE or (x, y) in warn_list:
-                                continue
-                            pygame.draw.circle(game_surface, RED, (x*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2, y*TILE_SIZE+SCREEN_MARGIN+TILE_SIZE//2), 3)
-                        
-            # 绘制可能的攻击位置
-            if not gm.selected_unit.attacked or gm.selected_unit.player_id != gm.cur_player_id:
-                if selected.attack_range[1] > 0:
-                    drawn = set() # 优先绘制当前位置可以攻击的目标
-                    for pair in gm.possible_attacks:
-                        x, y = pair[1]
-                        x -= gm.map_x
-                        y -= gm.map_y
-                        if x < 0 or x >= MAP_VIEW_SIZE or y < 0 or y >= MAP_VIEW_SIZE:
-                            continue
-                        attack_rect = draw_select_tile_rect(x, y, 2)
-                        if pair[1] in drawn:
-                            continue
-                        if not right_click_view_bool and pair[0] == (gm.selected_unit.x, gm.selected_unit.y) or \
-                            right_click_view_bool and pair[0] == right_click_view_coordinates:
-                            pygame.draw.rect(game_surface, PINK, attack_rect, 4)
-                            drawn.add(pair[1]) # 优先级
-                        else:
-                            pygame.draw.rect(game_surface, LIGHT_PINK, attack_rect, 4)
-                            
-            # 绘制选中单位边框
-            x = gm.selected_unit.x - gm.map_x
-            y = gm.selected_unit.y - gm.map_y
-            if 0 <= x < MAP_VIEW_SIZE and 0 <= y < MAP_VIEW_SIZE:
-                select_rect = draw_select_tile_rect(x, y, 0)
-                if right_click_view_bool:
-                    pygame.draw.rect(game_surface, WHITE, select_rect, 1)
-                else:
-                    pygame.draw.rect(game_surface, YELLOW, select_rect, 3)
-        # 绘制特效
-        for effect in gm.effects:
-            if not effect.update():
-                gm.effects.remove(effect)
-            effect.draw(game_surface, gm.map_x, gm.map_y)
-
-        # 绘制UI信息
-        font = pygame.font.SysFont('Calibri', 20, True)
-        turn_text = font.render(f"Turn {gm.turn:<3} {gm.players[gm.cur_player_id].name:<4}", True, WHITE)
-        game_surface.blit(turn_text, (20, 18))
-
-        # 绘制多行文本, 在右边
-        multiline_string = [f'Map {gm.level}']
-        for player in gm.players:
-            multiline_string.append('')
-            multiline_string.append(f"— Player {player.name:<4} — <" if player.id == gm.cur_player_id else
-                                    f"— Player {player.name:<4} —")
-            multiline_string.append(f"Money: {player.money}")
-        font = pygame.font.SysFont('Calibri', 20)
-        for i, line in enumerate(multiline_string):
-            text = font.render(line, True, WHITE)
-            game_surface.blit(text, (SCREEN_WIDTH - 250, SCREEN_MARGIN + i * 25))
-
-        # 底部info
-        if info_string[0] and info_string[0][-1]=='!':
-            font = pygame.font.SysFont('Calibri', 20, True)
-        info_text = [font.render(i, True, WHITE) for i in info_string]
-        game_surface.blit(info_text[0], (20, SCREEN_HEIGHT - 63))
-        game_surface.blit(info_text[1], (20, SCREEN_HEIGHT - 38))
+        render_playing_state()
     elif cur_state == GameState.GAME_OVER:
         # 半透明遮罩
         if not overlay:
@@ -579,6 +606,7 @@ while True:
 
     # 将游戏画面绘制到全屏中心
     screen.blit(game_surface, (start_x, start_y))
+
 
     # endregion Rendering
 

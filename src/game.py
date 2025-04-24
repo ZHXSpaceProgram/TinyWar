@@ -123,7 +123,7 @@ class GameManager:
             if i != self.cur_player_id:
                 player.reset_units(True)
         self.effects = []
-        self.ai_enabled = False
+        self.ai_id = None
 
     def _init_view(self):
         # 初始化地图位置（大地图左侧，小地图居中）
@@ -161,9 +161,12 @@ class GameManager:
 
     @classmethod
     def load(cls, filename='savegame.pkl'):
-        """Load a GameManager instance from disk (returns the loaded object)."""
+        """
+        Load a GameManager instance from disk (returns the loaded object).
+        Raise FileNotFoundError if the file does not exist.
+        """
         with open(filename, 'rb') as f:
-            gm = pickle.load(f)
+            gm: GameManager = pickle.load(f)
         gm._init_view()
         print(f"[Loaded] Game state read from {filename}")
         return gm
@@ -193,9 +196,9 @@ class GameManager:
                     self._calculate_possible_moves(unit.moved and is_cur_player, 
                                                    unit.attack_range[0]>1, override_movement)
                     return True
-            if right_click:
-                continue
             for build in player.builds:
+                if right_click and build.shop_type != SHOP_TYPE.NONE:
+                    continue
                 if build.x == x and build.y == y:
                     self.selected_unit = build
                     if build.attack_range[1] > 0:
@@ -203,7 +206,7 @@ class GameManager:
                     return True
         return False
     
-    def move_selected_unit(self, x, y):
+    def move_selected_unit(self, x, y, is_simulation=False):
         """
         - 根据坐标判断能否移动，如果可以就移动
         - 如果移动后无法攻击（兵种特性限制或者没有攻击目标），直接把attacked设为True
@@ -214,7 +217,8 @@ class GameManager:
             self.selected_unit.y = y
             self.selected_unit.moved = True
 
-            play_sound(f"assets/sound/effect/move_{self.selected_unit.move_type}_{random.randint(0, 1)}.mp3")
+            if not is_simulation:
+                play_sound(f"assets/sound/effect/move_{self.selected_unit.move_type}_{random.randint(0, 1)}.mp3")
 
             # 远程兵种（最大范围大于1）移动后不能攻击
             if self.selected_unit.attack_range[0] > 1:
@@ -278,7 +282,7 @@ class GameManager:
         else:
             self.players[target.player_id].units.remove(target)
 
-    def attack(self, x, y):
+    def attack(self, x, y, is_simulation=False):
         """
         - 检查发起者是否在可以打到目标的位置
         - 检查占领等特殊交互
@@ -288,9 +292,8 @@ class GameManager:
         for pair in self.possible_attacks:
             # 移动和攻击分两步点击，不支持一步到位
             if pair[1] == (x, y) and pair[0] == (self.selected_unit.x, self.selected_unit.y):
-
-                play_sound(f"assets/sound/effect/attack_{random.randint(0, 2)}.mp3")  # 播放攻击音效
-
+                if not is_simulation:
+                    play_sound(f"assets/sound/effect/attack_{random.randint(0, 2)}.mp3")  # 播放攻击音效
                 source: Unit = self.selected_unit
                 source.attacked = True
                 target: Unit = pair[2]
@@ -306,6 +309,7 @@ class GameManager:
                         self.players[source.player_id].builds.append(target)
                         self.neutral_player.builds.remove(target)
                         target.player_id = source.player_id
+                    source.moved = True
                     return False
                 damage = self._calculate_damage(source, target)
                 target.health -= damage
@@ -316,7 +320,7 @@ class GameManager:
                         damage = self._calculate_damage(target, source)
                         source.health -= damage
                         if source.health <= 0:
-                            self._unit_die(target)
+                            self._unit_die(source)
                 if hasattr(source, 'blitz'):
                     # 如果具有blitz特性，攻击后恢复可移动状态，但移动点数为1
                     source.moved = False
@@ -361,9 +365,8 @@ class GameManager:
                 global_factor *= 0.8
             # 非海军单位打海军单位衰减伤害
             if source.move_type < 3 and target.move_type == MoveType.Sea:
-                global_factor *= 0.1
+                global_factor *= 0.8
         return health_percentage * (source.attack + luck) * (terrain_factor * armor_factor) * global_factor
-
 
     def _calculate_possible_moves(self, skip_move=False, attack_without_move=False, override_movement=None):
         """
@@ -418,7 +421,6 @@ class GameManager:
                     cost = Terrain.PROPERTIES[self.map.terrain[ny][nx]][f'move_cost_{unit.move_type}']
                     if cost < 0:
                         continue  # 无法通行
-                    # print(f"DEBUG: {nx=}, {ny=}, {cost=}, {remain_movement=}")
                     new_remain = remain_movement - cost
                     if new_remain > best_remain.get((nx, ny), -0.1): # 调整这个值让最后一步可以欠费
                         best_remain[(nx, ny)] = new_remain
@@ -521,17 +523,20 @@ class Effect:
         return True  # Effect still active
 
     def draw(self, screen, map_x, map_y):
+        # 如果在显示范围外，不显示
+        if self.x < map_x or self.x >= map_x + MAP_VIEW_SIZE or self.y < map_y or self.y >= map_y + MAP_VIEW_SIZE:
+            return
         # 单位击杀效果
+        x = self.x - map_x
+        y = self.y - map_y
+        rect = pygame.Rect(
+            SCREEN_MARGIN + x * TILE_SIZE + 10,
+            SCREEN_MARGIN + y * TILE_SIZE + 10,
+            TILE_SIZE -20,
+            TILE_SIZE -20
+        )
         if self.type == EffectType.Death:
             # draw a cross at the center of the tile
-            x = self.x - map_x
-            y = self.y - map_y
-            rect = pygame.Rect(
-                SCREEN_MARGIN + x * TILE_SIZE + 10,
-                SCREEN_MARGIN + y * TILE_SIZE + 10,
-                TILE_SIZE -20,
-                TILE_SIZE -20
-            )
             pygame.draw.line(screen, RED, rect.topleft, rect.bottomright, 3)
             pygame.draw.line(screen, RED, rect.topright, rect.bottomleft, 3)
 
@@ -545,7 +550,7 @@ class Shop:
         self._last_got_item_ind: int = -1
         for unit in Unit.PROPERTIES.keys():
             self.items.append(unit)
-        # DEBUG: Add test items
+        # Add empty items
         for i in range(45 - len(self.items)):
             self.items.append(f'')
     def draw(self, screen, money):

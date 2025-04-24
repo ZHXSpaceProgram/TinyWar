@@ -1,6 +1,6 @@
 import os
 import pygame
-
+from collections import deque
 
 # region View  ----------------------------------------  View  -----------
 
@@ -36,6 +36,9 @@ MONEY_Y = SCREEN_HEIGHT - TILE_SIZE // 2 - 42
 RIGHT_VIEW_REMOVE_COUNTER_DEF = 5
 HINT_COUNTER_DEF = FPS * 1.5
 SHOP_OPEN_DELAY_COUNTER_DEF = 5
+
+# Ai
+AI_ID = 1
 
 # Info Strings
 # use tuple to avoid unexpected modification
@@ -93,6 +96,7 @@ class MoveType:
     Air = 3
     Sea = 4
     Sub = 5
+
 
 """
 用-1表示不可移动
@@ -198,35 +202,87 @@ class Frame_Timer:
     用于调试的计时器
     单位是毫秒
     """
-    CNT = 20 # [SET] 多少帧打印一次
-    AVG = 200 # [SET] 最多多少帧计算平均值
+    CNT = 200 # [SET] 多少帧打印一次
+    MAX = 3000 # [SET] 最多多少帧计算平均值
+    ACCURACY = 3 # [SET] 显示精度
+    PRINT_FPS = False # [SET] 是否打印帧率
     dict = {}
     cur = CNT
     __start_time = None
-    def start_timer():
-        Frame_Timer.__start_time = pygame.time.get_ticks()  # 获取当前时间戳（毫秒）
-    def end_timer(timer_name='default'):
-        if timer_name not in Frame_Timer.dict:
-            Frame_Timer.dict[timer_name] = []
+    
+    @classmethod
+    def __init_timer(cls, timer_name):
+        """初始化指定名称的计时器"""
+        if timer_name not in cls.dict:
+            cls.dict[timer_name] = deque(maxlen=cls.MAX)
+    
+    @classmethod
+    def start_timer(cls):
+        cls.__start_time = pygame.time.get_ticks()  # 获取当前时间戳（毫秒）
+    
+    @classmethod
+    def end_timer(cls, timer_name='default'):
+        cls.__init_timer(timer_name)
         end_time = pygame.time.get_ticks()  # 获取当前时间戳（毫秒）
-        list = Frame_Timer.dict[timer_name]
-        list.append(end_time - Frame_Timer.__start_time)
-        if len(list) > Frame_Timer.AVG:
-            Frame_Timer.dict[timer_name].pop(0)
-    def print():
-        if Frame_Timer.cur == 0:
-            Frame_Timer.cur = Frame_Timer.CNT
+        cls.dict[timer_name].append(end_time - cls.__start_time)
+    
+    @classmethod
+    def print(cls):
+        if cls.cur == 0:
+            cls.cur = cls.CNT
             # 显示实际帧率
             print('\n\n')
-            fps = frameclock.get_fps()
-            print(f"FPS: {round(fps)}")
+            if cls.PRINT_FPS:
+                fps = frameclock.get_fps()
+                print(f"FPS: {round(fps)}")
             # 打印列表平均值
-            for name in Frame_Timer.dict:
-                list = Frame_Timer.dict[name]
-                if len(list) > 0:
-                    print(f"{name}: {sum(list)/len(list):.1f}   ({len(list)})")
+            for name in cls.dict:
+                timer_queue = cls.dict[name]
+                if len(timer_queue) > 0:
+                    print(f"{name}: {sum(timer_queue)/len(timer_queue):.{cls.ACCURACY}f}   ({len(timer_queue)})")
         else:
-            Frame_Timer.cur -= 1
+            cls.cur -= 1
+
+
+class Counter:
+    """用于记录不同类型搜索次数的计数器类"""
+    def __init__(self):
+        self.counters = {}
+    
+    def increment(self, counter_name, amount=1):
+        """增加指定计数器的值"""
+        if counter_name not in self.counters:
+            self.counters[counter_name] = 0
+        self.counters[counter_name] += amount
+    
+    def get(self, counter_name):
+        """获取指定计数器的值"""
+        return self.counters.get(counter_name, 0)
+    
+    def reset(self, counter_name=None):
+        """重置指定计数器或所有计数器"""
+        if counter_name:
+            self.counters[counter_name] = 0
+        else:
+            self.counters = {}
+    
+    def get_all(self):
+        """获取所有计数器的值"""
+        return self.counters.copy()
+    
+    def print(self, title="AI搜索统计"):
+        """格式化打印计数器内容"""
+        print(f"\n----- {title} -----")
+        if not self.counters:
+            print("无记录")
+            return
+        # 找出最长的计数器名称，用于对齐输出
+        max_name_length = max(len(name) for name in self.counters.keys())
+        # 按计数器名称排序并打印
+        for name, count in sorted(self.counters.items()):
+            print(f"{name.ljust(max_name_length)} : {count}")
+        print("-" * (len(title) + 12))
+
 
 # endregion Game
 

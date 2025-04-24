@@ -4,8 +4,6 @@
 5	7	commando	1
 5	8	tank	1
 5	9	mortar	1
-2   7   factory 0
-3   8   city    -1
 1   12  destroyer 0
 1   13  submarine   0
 1   14  battleship  0
@@ -19,3 +17,7 @@
 1   3   bomber 0
 4   4   fighter 1
 4   3   bomber 1
+
+2   7   factory 0
+6   12  factory 1
+3   8   city    -1
