@@ -12,7 +12,7 @@ class GameMap:
         self.terrain = []
         with open(file, 'r') as f:
             for line in f:
-                self.terrain.append([Terrain.CHAR_MAP[c] for c in line.strip().split('\t')])
+                self.terrain.append([Terrain.CHAR_MAP[c] for c in line.strip().split()])
         self.width = len(self.terrain[0])
         self.height = len(self.terrain)
 
@@ -254,7 +254,8 @@ class GameManager:
                 return False
         # 如果目标是建筑
         if isinstance(target, Build):
-            if target.build_stacked:  # 不能攻击被堆叠的建筑
+            if target.build_stacked:
+                # 不能攻击被堆叠的建筑（这个变量似乎没有存在的必要，因为_calculate_possible_moves考虑攻击时优先考虑单位）
                 return False
             elif source.move_type == MoveType.Feet:  #占领建筑之前不能移动
                 if source.x != source_moved_position[0] or source.y!= source_moved_position[1]:

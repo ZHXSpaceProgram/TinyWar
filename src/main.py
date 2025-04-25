@@ -150,7 +150,7 @@ def render_playing_state(update=False):
     # 绘制单位
     for player in gm.players:
         for build in player.builds:
-            # 更新重叠状态
+            # 更新重叠状态（这个变量似乎没有存在的必要，因为_calculate_possible_moves考虑攻击时优先考虑单位）
             if build.stackable:
                 build.build_stacked = False
                 for unit in player.units:

@@ -24,7 +24,7 @@ class Counter:
         print("==================\n")
 counter = Counter()
 
-def minimax(game_state, unit, current_depth, is_maximizing, alpha, beta, search_depth, player_id, enemy_id, root_actions, counter=None):
+def minimax(game_state, root_unit, current_depth, is_maximizing, alpha, beta, search_depth, player_id, enemy_id, root_actions, counter=None):
     """
     实现minimax算法的工作函数，用于在独立进程中执行
     """
@@ -37,13 +37,13 @@ def minimax(game_state, unit, current_depth, is_maximizing, alpha, beta, search_
     best_action = None
 
     # 根节点只针对传入的unit；递归节点针对当前玩家所有单位
-    units = [unit] if current_depth == 0 else game_state.players[player_id_current].units
+    units = [root_unit] if current_depth == 0 else game_state.players[player_id_current].units
     
     for unit_to_process in units:
         if unit_to_process.moved and unit_to_process.attacked:
             continue
         # Optimization
-        if current_depth==2 and abs(unit_to_process.x - unit.x) + abs(unit_to_process.y - unit.y) > 2:
+        if current_depth==2 and abs(unit_to_process.x - root_unit.x) + abs(unit_to_process.y - root_unit.y) > 2:
             continue
         considered_targets=set()
 
@@ -52,7 +52,7 @@ def minimax(game_state, unit, current_depth, is_maximizing, alpha, beta, search_
             
             # Optimization
             if current_depth==2:
-                if action['type'] == 'move' or unit.movement > 4:
+                if action['type'] == 'move' or root_unit.movement > 4:
                     continue
                 if action['type'] == 'attack':
                     target = action['target']
@@ -62,7 +62,7 @@ def minimax(game_state, unit, current_depth, is_maximizing, alpha, beta, search_
                     considered_targets.add(target_id)
             
             if counter: # DEBUG:
-                counter.increment(f'{current_depth}-{unit.type}-{action["type"]}', 1)
+                counter.increment(f'{current_depth}-{root_unit.type}-{action["type"]}', 1)
 
             # 模拟执行行动
             memo = {id(game_state.map): game_state.map}
@@ -71,7 +71,7 @@ def minimax(game_state, unit, current_depth, is_maximizing, alpha, beta, search_
             next_state.next_turn()
             
             # 递归，并传递alpha, beta
-            _, score = minimax(next_state, unit, current_depth + 1, not is_maximizing, 
+            _, score = minimax(next_state, root_unit, current_depth + 1, not is_maximizing, 
                               alpha, beta, search_depth, player_id, enemy_id, None, counter)
                             
             if is_maximizing:
@@ -118,9 +118,9 @@ def evaluate_state(game_state, player_id, enemy_id):
     score += (my_player.money - enemy_player.money) * 0.5
 
     # DEBUG:
-    # for unit in my_player.units:
+    # for unit in enemy_player.units:
     #     if unit.type == 'fighter':
-    #         score += unit.health * 10
+    #         score -= unit.health * 10
     
     return score
 

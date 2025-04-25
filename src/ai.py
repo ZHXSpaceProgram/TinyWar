@@ -25,7 +25,7 @@ class GameAI:
         self.render_func = render_func
         self.enemy_id = 1 - self.player_id  # 假设只有两个玩家
         self.search_depth = search_depth  # 对抗搜索的深度
-        self.max_workers = min(12, os.cpu_count() or 1)  # 最大并行工作进程数
+        self.max_workers = min(10, os.cpu_count() or 1)  # 最大并行工作进程数
 
     def play_turn(self):
         """AI执行一回合的行动"""
@@ -45,7 +45,7 @@ class GameAI:
                 continue  # 跳过已经行动过的单位
             if unit in skip_units:
                 continue
-            best_action = self._search_best_action_parallel(unit)
+            best_action = self._search_best_action(unit)
             if best_action:
                 execute_action(unit, best_action, self.gm, False)
             if hasattr(unit, 'blitz') and not unit.attacked:  # blitz 单位如果没有攻击就不会有下一轮 --- [SPECIAL]
@@ -66,22 +66,20 @@ class GameAI:
         # 3. 结束回合
         self.gm.next_turn()
     
-    def _search_best_action_parallel(self, unit):
+    def _search_best_action(self, unit):
         """
         并行版本的最佳行动搜索，使用多个进程同时计算
         """
-        # DEBUG:
-        # return self._search_best_action(unit)
         
         # 获取所有可能的行动
         root_actions = get_all_possible_actions(unit, self.gm)
         if not root_actions:
             return None
         
-        # 如果行动数量少于阈值，使用单线程版本
+        # 如果行动数量少于阈值，使用非并行版本
         if len(root_actions) < WORKER_THRESHOLD:
             print('single\n')
-            return self._search_best_action(unit)
+            return self._search_best_action_non_parallel(unit, root_actions)
         
         # 创建临时目录存放进程间通信文件
         temp_dir = tempfile.mkdtemp(dir=os.path.join(os.getcwd()))
@@ -173,12 +171,11 @@ class GameAI:
             result[i % num_workers].append(action)
         return result
 
-    def _search_best_action(self, unit):
+    def _search_best_action_non_parallel(self, unit, root_actions):
         """
         为指定 unit 计算最佳行动，使用 Alpha-Beta 剪枝优化的 minimax 递归。
         返回格式：{'unit': unit, 'action': action, 'score': score} 或 None（如果无可行动）。
         """
-        root_actions = get_all_possible_actions(unit, self.gm)
         if not root_actions:
             return None
             
