@@ -234,7 +234,8 @@ class GameManager:
                 if pair[0] == (x, y):
                     return True
             # 如果当前位置没有攻击目标，直接把 attacked 置为True，表示本回合无法操作
-            self.selected_unit.attacked = True
+            if not is_simulation:  # 模拟的时候需要保持attacked的准确性
+                self.selected_unit.attacked = True
             return False
         return False
 
@@ -256,7 +257,7 @@ class GameManager:
             if target.build_stacked:  # 不能攻击被堆叠的建筑
                 return False
             elif source.move_type == MoveType.Feet:  #占领建筑之前不能移动
-                if abs(source.x - target.x) + abs(source.y - target.y) > 1:
+                if source.x != source_moved_position[0] or source.y!= source_moved_position[1]:
                     return False
         # 如果是单位
         else:
@@ -426,6 +427,9 @@ class GameManager:
                         best_remain[(nx, ny)] = new_remain
                         queue.append((nx, ny, new_remain))
 
+        if override_movement:  # 跳过攻击
+            return
+        
         # 把起始位置也当作“移动”点，允许原地攻击
         all_moves: set = {(unit.x, unit.y)} if attack_without_move else {(unit.x, unit.y)} | self.possible_moves
 

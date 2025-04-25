@@ -1,5 +1,13 @@
 import os
-import pygame
+# lazy import pygame
+if __name__ == "__main__":
+    import pygame
+else:
+    class LazyPygame:
+        def __getattr__(self, name):
+            import pygame
+            return getattr(pygame, name)
+    pygame = LazyPygame()
 from collections import deque
 
 # region View  ----------------------------------------  View  -----------
