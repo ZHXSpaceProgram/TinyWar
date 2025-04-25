@@ -24,7 +24,7 @@ class Counter:
         print("==================\n")
 counter = Counter()
 
-def minimax(game_state, unit, current_depth, is_maximizing, alpha, beta, search_depth, player_id, enemy_id):
+def minimax(game_state, unit, current_depth, is_maximizing, alpha, beta, search_depth, player_id, enemy_id, root_actions, counter=None):
     """
     实现minimax算法的工作函数，用于在独立进程中执行
     """
@@ -46,24 +46,25 @@ def minimax(game_state, unit, current_depth, is_maximizing, alpha, beta, search_
         if current_depth==2 and abs(unit_to_process.x - unit.x) + abs(unit_to_process.y - unit.y) > 2:
             continue
         
-        possible_actions = get_all_possible_actions(unit_to_process, game_state)
+        possible_actions = root_actions if root_actions else get_all_possible_actions(unit_to_process, game_state)
         for action in possible_actions:
             
             # Optimization
             if current_depth==2 and (action['type'] == 'move' or unit.movement > 4):
                 continue
             
-            counter.increment(f'{current_depth}-{unit.type}-{action["type"]}', 1)
+            if counter: # DEBUG:
+                counter.increment(f'{current_depth}-{unit.type}-{action["type"]}', 1)
 
             # 模拟执行行动
             memo = {id(game_state.map): game_state.map}
             next_state = copy.deepcopy(game_state, memo)
-            execute_action(unit_to_process, action, next_state)
+            execute_action(unit_to_process, action, next_state, True)
             next_state.next_turn()
             
             # 递归，并传递alpha, beta
             _, score = minimax(next_state, unit, current_depth + 1, not is_maximizing, 
-                              alpha, beta, search_depth, player_id, enemy_id)
+                              alpha, beta, search_depth, player_id, enemy_id, None, counter)
                             
             if is_maximizing:
                 if score > best_score:
@@ -109,72 +110,93 @@ def evaluate_state(game_state, player_id, enemy_id):
     score += (my_player.money - enemy_player.money) * 0.5
 
     # DEBUG:
-    # for unit in my_player.units:
-    #     if unit.type == 'fighter':
-    #         score += unit.health * 10
+    for unit in enemy_player.units:
+        if unit.type == 'fighter':
+            score -= unit.health * 10
     
     return score
 
-def get_all_possible_actions(unit, game_state):
-    """获得单位所有可能的移动和攻击行动"""
-    # 设定当前选中单位并计算可达格子
-    game_state.selected_unit = unit
-    
-    override_movement = 1 if hasattr(unit, 'blitz') and unit.attacked else None
-    
-    # 计算可能的移动
-    game_state._calculate_possible_moves(unit.moved, unit.attack_range[0]>1, override_movement)
-    
-    # 收集所有攻击行动
+def get_all_possible_actions(unit, game_state=None):
+    """
+    获得单位所有可能的移动和攻击行动
+    - unit：要生成行动的单位对象
+    - game_state：要在其上生成行动的游戏状态，默认为 None
+    返回：
+        actions: 包含所有 {'type': 'move'/'attack', ...} 的列表
+    """
+    # 选择使用的状态对象
+    state = game_state
+
+    # ---- 1. 计算可能的移动和攻击 ----
+    # 设定当前选中单位并计算可达格子，第二个参数控制是否允许跨越攻击范围 >1
+    # 建筑的移动会被跳过
+    state.selected_unit = unit
+    override_movement = 1 if hasattr(unit, 'blitz') and unit.attacked else None # blitz 单位override_movement --- [SPECIAL]
+    state._calculate_possible_moves(unit.moved, unit.attack_range[0]>1, override_movement)
+
+    # Optimzation 优先考虑攻击
+    # ---- 2. 收集所有由 GM 预先计算出的攻击行动 ----
     actions = []
-    # if not unit.attacked:  # 似乎不需要，因为override_movement时_calculate_possible_moves会跳过攻击计算
-    for from_pos, to_pos, target in game_state.possible_attacks:
+    for from_pos, to_pos, target in state.possible_attacks:
         actions.append({
             'type': 'attack',
             'from_position': from_pos,
             'target_position': to_pos,
             'target': target,
         })
-    
-    # 收集所有移动行动
-    for move_pos in game_state.possible_moves:
+    # ---- 3. 收集所有移动行动 ----
+    for move_pos in state.possible_moves:
         actions.append({
             'type': 'move',
             'position': move_pos,
         })
-    
+    # 这里不能加deselect，因为执行的时候还会检查 possible_moves 和 possible_attacks
     return actions
 
-def execute_action(unit, action, game_state):
-    """在模拟环境中执行一次行动"""
-    # 找到对应的单位副本
-    player = game_state.players[game_state.cur_player_id]
-    unit_copy = next(
-        (u for u in player.units + player.builds
-        if u.x == unit.x and u.y == unit.y),
-        None
-    )
-    
-    if not unit_copy:
-        return  # 单位没找到，无法模拟
-    
-    game_state.selected_unit = unit_copy
-    
-    # 执行动作
-    action_type = action.get('type')
-    if action_type == 'move':
+def execute_action(unit, action, game_state, is_simulation):
+    """
+    在真实环境或复制环境中执行一次行动。
+    - unit: 要执行行动的单位
+    - action: 要执行的行动
+    - game_state: 游戏状态对象
+    - is_simulation: 是否是模拟环境，默认为False
+    """
+    # 选择要操作的 GameManager
+    gm = game_state
+
+    player_id = gm.cur_player_id
+    # ——1) 选中单位——
+    if is_simulation:
+        # 模拟环境里需要根据坐标去复制对象列表里找对应的 unit_copy
+        player = gm.players[player_id]
+        unit_copy = next(
+            (u for u in player.units + player.builds
+            if u.x == unit.x and u.y == unit.y),
+            None
+        )
+        if not unit_copy:
+            return  # 单位没找到，无法模拟
+        gm.selected_unit = unit_copy
+    else:
+        # 真实环境中直接用传进来的 unit
+        gm.selected_unit = unit
+    # ——2) 执行动作——
+    type = action.get('type')
+    if type == 'move':
         x, y = action['position']
-        game_state.move_selected_unit(x, y, True)
-    elif action_type == 'attack':
+        gm.move_selected_unit(x, y, is_simulation)
+
+    elif type == 'attack':
         # 可能要先移动
         fx, fy = action['from_position']
         if (fx, fy) != (unit.x, unit.y):
-            game_state.move_selected_unit(fx, fy, True)
+            gm.move_selected_unit(fx, fy, is_simulation)
+
         # 再执行攻击
         tx, ty = action['target_position']
-        game_state.attack(tx, ty, True)
+        gm.attack(tx, ty, is_simulation)
 
-def search_best_action(game_state_data, unit_data, player_id, enemy_id, search_depth):
+def search_task(game_state_data, unit_data, player_id, enemy_id, search_depth, actions=None):
     """工作进程的主函数，接收序列化数据并返回最佳行动"""
     # from game import GameManager
     # from units import Unit
@@ -183,15 +205,15 @@ def search_best_action(game_state_data, unit_data, player_id, enemy_id, search_d
     game_state = pickle.loads(game_state_data)
     unit = pickle.loads(unit_data)
     
-    # 获取所有可能的行动
-    root_actions = get_all_possible_actions(unit, game_state)
+    # 使用传入的行动列表，如果没有则重新计算
+    root_actions = actions if actions is not None else get_all_possible_actions(unit, game_state)
     if not root_actions:
         return None
-    
+    counter = Counter() # DEBUG:
     # 执行minimax搜索
     best_action, score = minimax(game_state, unit, 0, True, float('-inf'), float('inf'), 
-                               search_depth, player_id, enemy_id)
-    
+                               search_depth, player_id, enemy_id, root_actions, counter)
+    counter.print()
     if not best_action:
         return None
     
@@ -214,12 +236,12 @@ if __name__ == "__main__":
     player_id = data['player_id']
     enemy_id = data['enemy_id']
     search_depth = data['search_depth']
+    actions = data['actions']  # 获取传入的行动列表
     
-    # 执行搜索
-    result = search_best_action(game_state_data, unit_data, player_id, enemy_id, search_depth)
+    # 执行搜索，传入行动列表
+    result = search_task(game_state_data, unit_data, player_id, enemy_id, search_depth, actions)
     
     # 写入结果
     with open(output_file, 'wb') as f:
         if result:
             f.write(result)
-    # counter.print()

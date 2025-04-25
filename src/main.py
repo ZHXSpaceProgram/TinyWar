@@ -10,10 +10,14 @@ import os
 
 # region Initialization ------------------------------------------------  Initialization ------------------
 
+is_debug = len(sys.argv) > 1 and sys.argv[1] == 'debug'
 pygame.init()
 
 # 创建无边框全屏窗口
-screen = pygame.display.set_mode((0, 0), pygame.NOFRAME)
+if is_debug:
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+else:
+    screen = pygame.display.set_mode((0, 0), pygame.NOFRAME)
 display_info = pygame.display.Info()
 window_width, window_height = display_info.current_w, display_info.current_h
 
@@ -30,8 +34,6 @@ try:
 except: pass
 
 """Global Variables"""
-
-is_debug = len(sys.argv) > 1 and sys.argv[1] == 'debug'
 
 gm: GameManager = None
 frameclock = pygame.time.Clock()
