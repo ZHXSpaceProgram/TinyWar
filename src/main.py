@@ -392,6 +392,7 @@ while True:
                 pygame.time.delay(200)
         elif cur_state == GameState.PLAYING:
             if gm.cur_player_id == gm.ai_id:
+                show_hint(HINTS.AI)
                 ai.play_turn()
                 pygame.event.clear()  # 清除事件列表
                 winners = gm.check_game_over()

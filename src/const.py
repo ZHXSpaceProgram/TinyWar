@@ -72,6 +72,7 @@ class HINTS:
     FILE_ERROR = 'Level file error.'
     SAVE = 'Game Saved'
     LOAD = 'Game Loaded'
+    AI = 'AI is thinking...'
 
 # endregion View
 

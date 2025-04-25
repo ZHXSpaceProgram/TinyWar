@@ -14,9 +14,9 @@ from ai_worker import get_all_possible_actions, execute_action, minimax, Counter
 """TODOs
 
 """
-#并行阈值常量
-WORKER_THRESHOLD = 300  # 阈值，如果行动数量小于等于这个值，则使用单线程版本
-WORKER_MAX = 15  # 每个工作进程最多处理多少个行动
+
+WORKER_THRESHOLD = 30  # 并行搜索的阈值，如果根行动数小于这个值，使用单线程版本
+WORKER_SPLIT = 15  # 每个工作进程处理的行动数量阈值，用于动态计算最优工作进程数
 
 class GameAI:
     def __init__(self, gm, render_func, search_depth=3):
@@ -35,14 +35,12 @@ class GameAI:
         units_to_process = player.units + [build for build in player.builds if build.attack]
         units_to_process.sort(key=lambda unit: (-unit.attack, -unit.movement)) 
         units_to_process += [unit for unit in player.units if hasattr(unit, 'blitz')]  # blitz 单位多考虑一次 --- [SPECIAL]
-        
-        # DEBUG
-        # self.counter = Counter()
 
         # 为每个单位计算最佳行动并执行
+        self.render_func(True)
         skip_units = []
         for unit in units_to_process:
-            # start_time = pygame.time.get_ticks()
+            start_time = pygame.time.get_ticks()
             if unit.moved and unit.attacked:
                 continue  # 跳过已经行动过的单位
             if unit in skip_units:
@@ -54,18 +52,17 @@ class GameAI:
                 skip_units.append(unit)
                 continue
             self._move_view(unit)  # 移动视角
+            end_time = pygame.time.get_ticks()
+            pygame.time.delay(300 - end_time + start_time)  # 短暂延迟
             self.render_func(True)  # 渲染更新
-            # end_time = pygame.time.get_ticks()
-            # pygame.time.delay(500 - end_time + start_time)  # 短暂延迟
 
         print('-------AI End------')
         # DEBUG
         # self.counter.print()
-
-        pygame.time.delay(500)
-
         # 购买新单位
         self._try_purchase_units()
+        self.render_func(True)
+        pygame.time.delay(300)
         # 3. 结束回合
         self.gm.next_turn()
     
@@ -82,8 +79,8 @@ class GameAI:
             return None
         
         # 如果行动数量少于阈值，使用单线程版本
-        if len(root_actions) <= WORKER_THRESHOLD:
-            print('single')
+        if len(root_actions) < WORKER_THRESHOLD:
+            print('single\n')
             return self._search_best_action(unit)
         
         # 创建临时目录存放进程间通信文件
@@ -162,8 +159,8 @@ class GameAI:
         # 如果未指定工作进程数，则动态计算
         if num_workers is None:
             action_count = len(actions)
-            num_workers = max(1, min(self.max_workers, (action_count + WORKER_MAX - 1) // WORKER_MAX))
-            print(f'{num_workers=}')
+            num_workers = max(1, min(self.max_workers, (action_count + WORKER_SPLIT - 1) // WORKER_SPLIT))
+            print(f'{num_workers=}\n')
         
         # 只有一个工作进程时直接返回
         if num_workers <= 1:

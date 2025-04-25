@@ -45,13 +45,21 @@ def minimax(game_state, unit, current_depth, is_maximizing, alpha, beta, search_
         # Optimization
         if current_depth==2 and abs(unit_to_process.x - unit.x) + abs(unit_to_process.y - unit.y) > 2:
             continue
-        
+        considered_targets=set()
+
         possible_actions = root_actions if root_actions else get_all_possible_actions(unit_to_process, game_state)
         for action in possible_actions:
             
             # Optimization
-            if current_depth==2 and (action['type'] == 'move' or unit.movement > 4):
-                continue
+            if current_depth==2:
+                if action['type'] == 'move' or unit.movement > 4:
+                    continue
+                if action['type'] == 'attack':
+                    target = action['target']
+                    target_id = (target.x, target.y)
+                    if target_id in considered_targets:
+                        continue
+                    considered_targets.add(target_id)
             
             if counter: # DEBUG:
                 counter.increment(f'{current_depth}-{unit.type}-{action["type"]}', 1)
@@ -110,9 +118,9 @@ def evaluate_state(game_state, player_id, enemy_id):
     score += (my_player.money - enemy_player.money) * 0.5
 
     # DEBUG:
-    for unit in enemy_player.units:
-        if unit.type == 'fighter':
-            score -= unit.health * 10
+    # for unit in my_player.units:
+    #     if unit.type == 'fighter':
+    #         score += unit.health * 10
     
     return score
 
