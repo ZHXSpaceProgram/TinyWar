@@ -42,8 +42,8 @@ def minimax(game_state, root_unit, current_depth, is_maximizing, alpha, beta, se
     for unit_to_process in units:
         if unit_to_process.moved and unit_to_process.attacked:
             continue
-        # Optimization
-        if current_depth==2 and abs(unit_to_process.x - root_unit.x) + abs(unit_to_process.y - root_unit.y) > 2:
+        # Optimization DEBUG: default 2, mod to 4
+        if current_depth==2 and abs(unit_to_process.x - root_unit.x) + abs(unit_to_process.y - root_unit.y) > 4:
             continue
         considered_targets=set()
 

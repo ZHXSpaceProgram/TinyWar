@@ -1,5 +1,7 @@
 # Project Guide
 
+The code is written in Python 3.13, but should be compatible with earlier versions.
+
 ## Code Structure
 
 ### main.py
