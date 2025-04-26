@@ -2,7 +2,7 @@
 
 ## Design Properties
 
-- Add the name and properties of you unit to `Unit.PROPERTIES` in `units.py`
+- Add the name and properties of you unit to `Unit.PROPERTIES` in `units.py`.
 
 ## Design Image
 

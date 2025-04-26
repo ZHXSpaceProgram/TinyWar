@@ -57,8 +57,6 @@ class GameAI:
             self.render_func(True)  # 渲染更新
 
         print('-------AI End------')
-        # DEBUG
-        # self.counter.print()
         # 购买新单位
         self._try_purchase_units()
         self.render_func(True)
@@ -82,7 +80,9 @@ class GameAI:
             return self._search_best_action_non_parallel(unit, root_actions)
         
         # 创建临时目录存放进程间通信文件
-        temp_dir = tempfile.mkdtemp(dir=os.path.join(os.getcwd()))
+        _dir = os.path.join(tempfile.gettempdir(), "tinywar")
+        os.makedirs(_dir, exist_ok=True)
+        temp_dir = tempfile.mkdtemp(dir=_dir)
         
         # 准备游戏状态数据
         game_state_data = pickle.dumps(copy.deepcopy(self.gm))
@@ -181,10 +181,10 @@ class GameAI:
             
         # 从根节点开始调用 minimax，初始 alpha=-inf, beta=inf
         root_state = copy.deepcopy(self.gm)
-        counter = Counter()
+        # counter = Counter()
         best, score = minimax(root_state, unit, 0, True, float('-inf'), float('inf'), 
-                             self.search_depth, self.player_id, self.enemy_id, None, counter)
-        counter.print()
+                             self.search_depth, self.player_id, self.enemy_id, None)
+        # counter.print()
         if not best:
             return None
         best['score'] = score

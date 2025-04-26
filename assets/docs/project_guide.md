@@ -1,5 +1,7 @@
 # Project Guide
 
+The code is written in Python 3.13, but should be compatible with earlier versions.
+
 ## Code Structure
 
 ### main.py
@@ -83,5 +85,6 @@
 
 ## Todo
 
-- Add a new state for selecting target area with mouse, for special skills or constructing buildings
+- Add a new state for selecting target area with the mouse, for special CO skills or constructing buildings
 
+- Add path display and War Fog
