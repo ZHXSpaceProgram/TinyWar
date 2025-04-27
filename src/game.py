@@ -177,6 +177,9 @@ class GameManager:
         if self.cur_player_id == 0:
             self.turn += 1
         self.players[self.cur_player_id].reset_units()
+        for build in self.cur_player().builds:
+            if hasattr(build, 'income'):
+                self.cur_player().money += build.income
         self.deselect()
 
     def select_unit(self, x, y, right_click=False):

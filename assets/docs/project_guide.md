@@ -88,3 +88,5 @@ The code is written in Python 3.13, but should be compatible with earlier versio
 - Add a new state for selecting target area with the mouse, for special CO skills or constructing buildings
 
 - Add path display and War Fog
+
+- Oil, ammo and supply
