@@ -15,11 +15,11 @@ from ai_worker import get_all_possible_actions, execute_action, minimax, Counter
 
 """
 
-WORKER_THRESHOLD = 30  # 并行搜索的阈值，如果根行动数小于这个值，使用单线程版本
-WORKER_SPLIT = 15  # 每个工作进程处理的行动数量阈值，用于动态计算最优工作进程数
+WORKER_THRESHOLD = 100  # 并行搜索的阈值，如果根行动数小于这个值，使用单线程版本（30）
+WORKER_SPLIT = 50  # 每个工作进程处理的行动数量阈值，用于动态计算最优工作进程数（15）
 
 class GameAI:
-    def __init__(self, gm, render_func, search_depth=3):
+    def __init__(self, gm, render_func, search_depth=2):
         self.gm: GameManager = gm
         self.player_id = gm.ai_id
         self.render_func = render_func

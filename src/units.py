@@ -130,10 +130,10 @@ class Unit:
         "submarine": {
            'movement': 4,
             'attack_range': (1, 1),
-            'health': 25,
+            'health': 45,
             'attack': 35,
             'weapon_type': 2,
-            'armor_type': 0,
+            'armor_type': 1,
             'move_type': MoveType.Sub,
             'price': 65,
             'description': 'submarine',
